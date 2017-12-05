@@ -1,16 +1,27 @@
 <!DOCTYPE html>
-
-  <head>
-    SBOLExplorer
-  </head>
-
-  <body>
-    <svg width="960" height="600"></svg>
-    <p id="text"></p>
-  </body>
-
   <link rel="stylesheet" type="text/css" href="style.css">
   <script src="https://d3js.org/d3.v4.min.js"></script>
   <script type="text/javascript" src="script.js"></script>
+
+  <head>
+    SBOLExplorer<br>
+  </head>
+
+  <body>
+    <svg width="960" height="600"></svg><br>
+
+    Generated Query:
+    <p id="query"></p>
+
+    <form action="javascript:handleQuery()">
+      Type:<br>
+      <input type="text" name="type" id="type" value="ComponentDefinition"><br>
+      Role:<br>
+      <input type="text" name="role" id="role" value="Promoter"><br>
+      Limit:<br>
+      <input type="text" name="limit" id="limit" value="500"><br>
+      <input type="submit" value="Run Query">
+    </form>
+  </body>
 
 </html>
