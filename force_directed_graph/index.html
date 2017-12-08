@@ -10,10 +10,11 @@
   <body>
     <svg width="960" height="600"></svg><br>
 
-    Generated Query:
-    <p id="query"></p>
+    Executed Query:
+    <p id="query">Populated when you click "Run Query"</p><br>
 
-    <form action="javascript:handleQuery()">
+    Query Form:
+    <form action="javascript:handleQueryForm()">
       Type:<br>
       <input type="text" name="type" id="type" value="ComponentDefinition"><br>
       Role:<br>
@@ -21,7 +22,33 @@
       Limit:<br>
       <input type="text" name="limit" id="limit" value="500"><br>
       <input type="submit" value="Run Query">
+    </form><br>
+
+    <form action="javascript:handleQueryText()" id="queryTextForm">
+      Query Text:<br>
+      <textarea form="queryTextForm" rows="15" cols="80" id="queryText">
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX sbh: <http://wiki.synbiohub.org/wiki/Terms/synbiohub#>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX sbol: <http://sbols.org/v2#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX purl: <http://purl.obolibrary.org/obo/>
+
+select distinct ?pcd ?ccd
+WHERE
+{
+?pcd a sbol:ComponentDefinition ;
+  sbol:component ?sc .
+
+?sc sbol:definition ?ccd
+}
+LIMIT 500</textarea><br>
+      <input type="submit" value="Run Query">
     </form>
+
   </body>
 
 </html>

@@ -1,4 +1,16 @@
-function handleQuery() {
+function handleQueryForm() {
+  var sparqlQuery = generateQuery();
+  handleQuery(sparqlQuery);
+}
+
+function handleQueryText() {
+  var sparqlQuery = document.getElementById("queryText").value;
+  handleQuery(sparqlQuery);
+}
+
+function handleQuery(sparqlQuery) {
+  document.getElementById("query").innerHTML = sparqlQuery;
+
   var svg = d3.select("svg");
   svg.selectAll("*").remove();
 
@@ -7,18 +19,12 @@ function handleQuery() {
 
   var color = d3.scaleOrdinal(d3.schemeCategory20);
 
-  var limit = document.getElementById("limit").value;
-  var strength = -((10 / Math.log10(limit)).toPrecision(3));
   var simulation = d3.forceSimulation()
       .force("link", d3.forceLink().id(function(d) { return d.id; }))
-      .force("charge", d3.forceManyBody().strength(strength))
+      .force("charge", d3.forceManyBody().strength(-10))
       .force("center", d3.forceCenter(width / 2, height / 2));
 
-  var sparqlQuery = generateQuery();
-  document.getElementById("query").innerHTML = sparqlQuery;
-
   var requestUrl = "https://synbiohub.org/sparql?query=" + encodeURIComponent(sparqlQuery);
-
   d3.json(requestUrl, function(error, graph) {
     if (error) {
       console.log(requestUrl);
@@ -28,9 +34,6 @@ function handleQuery() {
     var nodes = createNodes(graph);
     var links = createLinks(graph);
     createRoot(nodes, links);
-
-    console.log("nodes: " + JSON.stringify(nodes));
-    console.log("links: " + JSON.stringify(links));
 
     var link = svg.append("g")
         .attr("class", "links")
@@ -50,6 +53,8 @@ function handleQuery() {
             .on("start", dragstarted)
             .on("drag", dragged)
             .on("end", dragended));
+
+    node.on("click", clicked)
 
     node.append("title")
         .text(function(d) { return d.id; });
@@ -91,14 +96,17 @@ function handleQuery() {
     d.fx = null;
     d.fy = null;
   }
+
+  function clicked(d) {
+    window.open(d.id);
+  }
 }
 
 function generateQuery() {
   var type = document.getElementById("type").value;
   var role = document.getElementById("role").value;
-  var limit = document.getElementById("limit").value;
 
-  var sparqlQuery = `
+  var headers = `
   PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
   PREFIX dcterms: <http://purl.org/dc/terms/>
   PREFIX dc: <http://purl.org/dc/elements/1.1/>
@@ -108,20 +116,22 @@ function generateQuery() {
   PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
   PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
   PREFIX purl: <http://purl.obolibrary.org/obo/>
+  `
 
-  select distinct ?pcd ?ie ?ccd
+  var query = `
+  select distinct ?pcd ?ccd
   WHERE
   {
   ?pcd a sbol:ComponentDefinition ;
-  sbol:component ?sc;
-  prov:wasDerivedFrom ?ie .
+    sbol:component ?sc .
 
   ?sc sbol:definition ?ccd
   }
-  LIMIT
-  ` + " " + limit;
+  `
 
-  return sparqlQuery;
+  var limit = "LIMIT " + document.getElementById("limit").value;
+
+  return headers + query + limit;
 }
 
 // TODO why doesn't array.includes work?
