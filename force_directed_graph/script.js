@@ -106,14 +106,7 @@ function generateQuery() {
   var type = document.getElementById("type").value;
   var role = document.getElementById("role").value;
   var displayId = document.getElementById("displayId").value;
-
-  // TODO tie in constraints to submission
-  var constraints = `
-  sbol:type <http://www.biopax.org/release/biopax-level3.owl#DnaRegion> ;
-  sbol:role <http://identifiers.org/so/SO:0000167>
-  `;
-  // TODO doesn't work when below is included
-  // sbol:displayId <BBa_K1585999>
+  var limit = document.getElementById("limit").value;
 
   var headers = `
   PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -125,6 +118,12 @@ function generateQuery() {
   PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
   PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
   PREFIX purl: <http://purl.obolibrary.org/obo/>
+  `;
+
+  var constraints = `
+  sbol:type <` + type + `> ;
+  sbol:role <` + role + `> ;
+  sbol:displayId "` + displayId + `"
   `;
 
   var query = `
@@ -163,9 +162,7 @@ function generateQuery() {
       ?ccd ` + constraints + `
     }
   }
-  `;
-
-  var limit = "LIMIT " + document.getElementById("limit").value;
+  LIMIT ` + limit;
 
   return headers + query + limit;
 }
