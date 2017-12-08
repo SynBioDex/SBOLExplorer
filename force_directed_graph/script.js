@@ -105,6 +105,15 @@ function handleQuery(sparqlQuery) {
 function generateQuery() {
   var type = document.getElementById("type").value;
   var role = document.getElementById("role").value;
+  var displayId = document.getElementById("displayId").value;
+
+  // TODO tie in constraints to submission
+  var constraints = `
+  sbol:type <http://www.biopax.org/release/biopax-level3.owl#DnaRegion> ;
+  sbol:role <http://identifiers.org/so/SO:0000167>
+  `;
+  // TODO doesn't work when below is included
+  // sbol:displayId <BBa_K1585999>
 
   var headers = `
   PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -116,18 +125,45 @@ function generateQuery() {
   PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
   PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
   PREFIX purl: <http://purl.obolibrary.org/obo/>
-  `
+  `;
 
   var query = `
   select distinct ?pcd ?ccd
   WHERE
   {
-  ?pcd a sbol:ComponentDefinition ;
-    sbol:component ?sc .
+    ?pcd a sbol:ComponentDefinition .
+    ?ccd a sbol:ComponentDefinition .
 
-  ?sc sbol:definition ?ccd
+    {
+      ?pcd sbol:component ?zero .
+      ?zero sbol:definition ?ccd .
+    }
+    UNION
+    {
+      ?pcd sbol:component ?zero .
+      ?zero sbol:definition ?one .
+      ?one sbol:component ?two .
+      ?two sbol:definition ?ccd .
+    }
+    UNION
+    {
+      ?pcd sbol:component ?zero .
+      ?zero sbol:definition ?one .
+      ?one sbol:component ?two .
+      ?two sbol:definition ?three .
+      ?three sbol:component ?four .
+      ?four sbol:definition ?ccd .
+    } .
+
+    {
+      ?pcd ` + constraints + `
+    }
+    UNION
+    {
+      ?ccd ` + constraints + `
+    }
   }
-  `
+  `;
 
   var limit = "LIMIT " + document.getElementById("limit").value;
 
