@@ -54,6 +54,10 @@ void blast_query(map<string, float> &distances, string db_path, string query_pat
   string prefix = "Sequences producing significant alignments:";
   while (lines[line_idx].compare(0, prefix.size(), prefix)) {
     line_idx++;
+
+    if (line_idx >= lines.size()) {
+      return;
+    }
   }
   line_idx += 2;
 

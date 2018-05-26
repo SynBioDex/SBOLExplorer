@@ -23,7 +23,7 @@ pthread_mutex_t uf_mutex;
 
 
 void read_file() {
-  ifstream f("sequences.fsa");
+  ifstream f("../../blast/db/synbiohubdb/synbiohub.fsa");
 
   if (f.is_open()) {
     string line;
@@ -49,8 +49,19 @@ void read_file() {
 }
 
 
-void write_query_file(const string &uri, const string &seq, const string &thread_id) {
-  // TODO
+void write_query_file(const string &uri, const string &seq, const string &path) {
+  ofstream f(path);
+
+  if (f.is_open()) {
+    f << ">" << uri << endl;
+    f << seq << endl;
+
+    f.close();
+  } else {
+    cout << "Unable to open file" << endl;
+  }
+
+  //cout << "Wrote query file: " << path << endl;
 }
 
 
@@ -60,24 +71,29 @@ void* spin(void *args) {
   for (int uri_idx = p->low; uri_idx < p->high; uri_idx++) {
     map<string, float> distances;
 
-    write_query_file(uris[uri_idx], seqs[uri_idx], p->thread_id);
-
     string query_path = "../../blast/db/synbiohubdb/queries/query" + p->thread_id + ".fsa";
+    write_query_file(uris[uri_idx], seqs[uri_idx], query_path);
+
     blast_query(distances, "../../blast/db/synbiohubdb/synbiohub.fsa", query_path);
+
+    int merged = 0;
 
     // TODO test change locking structure to batch merges
     for (auto distance : distances) {
-      cout << distance.first << " " << distance.second << endl;
 
       if (distance.second < DISTANCE_THRESHOLD) {
         pthread_mutex_lock(&uf_mutex);
         uf->merge(uri_idx, uri_ids[distance.first]);
         //cout << p->thread_id << " unioned  " << first << " " << second << " distance: " << distance << endl;
         pthread_mutex_unlock(&uf_mutex);
+
+        merged++;
       } else {
         //cout << p->thread_id << " no union " << first << " " << second << " distance: " << distance << endl;
       }
     }
+
+    cout << uri_idx - p->low << "/" << p->high - p->low << " merged: " << merged << endl;
   }
 }
 
@@ -120,7 +136,7 @@ int main() {
     uri_id = min(uri_id + interval_size, static_cast<int>(uris.size()));
     p->high = uri_id;
 
-    p->thread_id = i;
+    p->thread_id = i + '0';
 
     partitions.push_back(p);
   }
