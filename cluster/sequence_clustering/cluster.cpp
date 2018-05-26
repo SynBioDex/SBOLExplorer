@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#include <algorithm>
 #include "disjoint_set.cpp"
 #include "blast_query.cpp"
 
@@ -31,7 +32,7 @@ void read_file() {
     while (getline(f, line)) {
       string identifier;
 
-      string uri = line.substr(1, strlen(line));
+      string uri = line.substr(1, line.size());
       uris.push_back(uri);
       uri_ids.insert(make_pair(uri, index));
 
@@ -116,7 +117,7 @@ int main() {
     struct partition* p = (struct partition*) malloc(sizeof(struct partition));
 
     p->low = uri_id;
-    uri_id = min(uri_id + interval_size, uris.size());
+    uri_id = min(uri_id + interval_size, static_cast<int>(uris.size()));
     p->high = uri_id;
 
     p->thread_id = i;
