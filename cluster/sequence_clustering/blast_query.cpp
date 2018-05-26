@@ -29,7 +29,7 @@ size_t split(const std::string &txt, std::vector<std::string> &strs, char ch)
 }
 
 
-std::string exec(const char* cmd) {
+std::string exec(const char *cmd) {
   std::array<char, 128> buffer;
   std::string result;
   std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
@@ -42,8 +42,9 @@ std::string exec(const char* cmd) {
 }
 
 
-int main() {
-  string blast_out = exec("./../../blast/ncbi-blast-2.7.1+-src/c++/ReleaseMT/bin/blastn -db ../../blast/db/synbiohubdb/synbiohub.fsa -query ../../blast/db/synbiohubdb/queries/query.fsa");
+void blast_query(map<string, float> &distances, string db_path, string query_path) {
+  string cmd = "./../../blast/ncbi-blast-2.7.1+-src/c++/ReleaseMT/bin/blastn -db " + db_path + " -query " + query_path;
+  string blast_out = exec(cmd.c_str());
 
   // extract significant alignments
   vector<string> lines;
@@ -63,11 +64,8 @@ int main() {
 
     string uri = characteristics[0];
     float score = atof(characteristics[characteristics.size() - 1].c_str());
-
-    cout << uri << " " << score << endl;
+    distances.insert(make_pair(uri, score));
 
     line_idx++;
   }
-
-  return 0;
 }
