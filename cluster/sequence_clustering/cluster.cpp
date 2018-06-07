@@ -71,7 +71,7 @@ void* spin(void *args) {
   for (int uri_idx = p->low; uri_idx < p->high; uri_idx++) {
     map<string, float> distances;
 
-    string query_path = "../../blast/db/synbiohubdb/queries/query" + p->thread_id + ".fsa";
+    string query_path = "../../blast/db/synbiohubdb/tmp/query" + p->thread_id + ".fsa";
     write_query_file(uris[uri_idx], seqs[uri_idx], query_path);
 
     blast_query(distances, "../../blast/db/synbiohubdb/synbiohub.fsa", query_path);

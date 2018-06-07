@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script type="text/javascript" src="script.js"></script>
+
+  <head>
+    SBOLExplorer<br>
+  </head>
+
+  <body>
+    <svg width="960" height="600"></svg><br>
+
+    Executed Query:
+    <p id="query">Populated when you click "Run Query"</p><br>
+
+    Query Form:
+    <form action="javascript:handleQueryForm()">
+      Type:<br>
+      <input type="text" name="type" id="type" value="http://www.biopax.org/release/biopax-level3.owl#DnaRegion"><br>
+      Role:<br>
+      <input type="text" name="role" id="role" value="http://identifiers.org/so/SO:0000167"><br>
+      DisplayId:<br>
+      <input type="text" name="displayId" id="displayId" value="BBa_K1585999"><br>
+      Limit:<br>
+      <input type="text" name="limit" id="limit" value="50"><br>
+      <input type="submit" value="Run Query">
+    </form><br>
+
+    <form action="javascript:handleQueryText()" id="queryTextForm">
+      Query Text:<br>
+      <textarea form="queryTextForm" rows="15" cols="100" id="queryText">
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX sbh: <http://wiki.synbiohub.org/wiki/Terms/synbiohub#>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX sbol: <http://sbols.org/v2#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX purl: <http://purl.obolibrary.org/obo/>
+
+select distinct ?pcd ?ccd
+WHERE
+{
+  ?pcd a sbol:ComponentDefinition .
+  ?ccd a sbol:ComponentDefinition .
+
+  {
+    ?pcd sbol:component ?zero .
+    ?zero sbol:definition ?ccd .
+  }
+  UNION
+  {
+    ?pcd sbol:component ?zero .
+    ?zero sbol:definition ?one .
+    ?one sbol:component ?two .
+    ?two sbol:definition ?ccd .
+  }
+  UNION
+  {
+    ?pcd sbol:component ?zero .
+    ?zero sbol:definition ?one .
+    ?one sbol:component ?two .
+    ?two sbol:definition ?three .
+    ?three sbol:component ?four .
+    ?four sbol:definition ?ccd .
+  } .
+
+  {
+    ?pcd sbol:type <http://www.biopax.org/release/biopax-level3.owl#DnaRegion> ;
+         sbol:role <http://identifiers.org/so/SO:0000167> ;
+         sbol:displayId "BBa_K1585999"
+  }
+  UNION
+  {
+    ?ccd sbol:type <http://www.biopax.org/release/biopax-level3.owl#DnaRegion> ;
+         sbol:role <http://identifiers.org/so/SO:0000167> ;
+         sbol:displayId "BBa_K1585999"
+  }
+}
+LIMIT 50</textarea><br>
+      <input type="submit" value="Run Query">
+    </form>
+
+  </body>
+
+</html>
