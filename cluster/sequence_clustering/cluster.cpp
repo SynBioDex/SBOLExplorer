@@ -6,7 +6,7 @@
 using namespace std;
 
 const int NUM_WORKERS = 8;
-const float DISTANCE_THRESHOLD = .005;
+const float DISTANCE_THRESHOLD = .00001;
 
 struct partition {
   int low;
@@ -14,11 +14,16 @@ struct partition {
   string thread_id;
 };
 
-vector<string> uris;
-map<string, int> uri_ids;
-vector<string> seqs;
 
+// parallel vectors of uris and seqs, mapping each part to an index
+vector<string> uris;
+vector<string> seqs;
+// reverse mapping from uri to index
+map<string, int> uri_ids;
+
+// union find data structure
 UF* uf;
+// uf lock
 pthread_mutex_t uf_mutex;
 
 
@@ -103,7 +108,7 @@ void write_clusters() {
 
   if (f.is_open()) {
     for (int i = 0; i < uris.size(); i++) {
-      f << i << " " << uf->find(i) << endl;
+      f << uris[i] << " " << uf->find(i) << endl;
     }
 
     f.close();
