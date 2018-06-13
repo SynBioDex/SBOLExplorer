@@ -2,7 +2,7 @@
 
 SBOLExplorer is a service that simplifies the process of analyzing and searching for parts within genetic design repositories.  For questions, contact Michael Zhang at <michael13162@gmail.com>
 
-![alt text](https://raw.githubusercontent.com/michael13162/SBOLExplorer/master/force_directed_graph/network.png)
+![alt text](https://raw.githubusercontent.com/michael13162/SBOLExplorer/master/visualization/network.png)
 
 To run a neat visualization, go to the force_directed_graph folder and run "http-server" in the command line.  Then, open the browser to the hosted page.  Shown is a network visualization of part usage in SynBioHub.
 
