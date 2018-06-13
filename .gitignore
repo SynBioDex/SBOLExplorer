@@ -103,5 +103,4 @@ ENV/
 
 # custom
 blast/ncbi-blast-*-src/
-blast/db/*/tmp/
 *.out
