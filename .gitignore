@@ -102,5 +102,4 @@ ENV/
 
 
 # custom
-blast/ncbi-blast-*-src/
 *.out
