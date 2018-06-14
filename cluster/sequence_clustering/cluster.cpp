@@ -6,7 +6,7 @@
 using namespace std;
 
 const int NUM_WORKERS = 8;
-const float DISTANCE_THRESHOLD = 1000; // TODO change distance to similarity
+const float DISTANCE_THRESHOLD = 500; // TODO change distance to similarity
 
 struct partition {
   int low;
