@@ -6,7 +6,7 @@
 using namespace std;
 
 const int NUM_WORKERS = 8;
-const float DISTANCE_THRESHOLD = .00001;
+const float DISTANCE_THRESHOLD = 5000; // TODO change distance to similarity
 
 struct partition {
   int low;
@@ -85,16 +85,17 @@ void* spin(void *args) {
 
     // TODO test change locking structure to batch merges
     for (auto distance : distances) {
+      int merge_idx = uri_ids[distance.first];
 
-      if (distance.second < DISTANCE_THRESHOLD) {
+      if (distance.second > DISTANCE_THRESHOLD) {
         pthread_mutex_lock(&uf_mutex);
-        uf->merge(uri_idx, uri_ids[distance.first]);
-        //cout << p->thread_id << " unioned  " << first << " " << second << " distance: " << distance << endl;
+        uf->merge(uri_idx, merge_idx);
+        //cout << p->thread_id << " unioned  " << uri_idx << " " << merge_idx << " distance: " << distance.second << endl;
         pthread_mutex_unlock(&uf_mutex);
 
         merged++;
       } else {
-        //cout << p->thread_id << " no union " << first << " " << second << " distance: " << distance << endl;
+        //cout << p->thread_id << " no union " << uri_idx << " " << merge_idx << " distance: " << distance.second << endl;
       }
     }
 
