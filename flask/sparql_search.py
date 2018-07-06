@@ -89,23 +89,20 @@ def create_results_response(es_response, limit, offset, ranks):
         bindings.append(binding)
 
     bindings.sort(key = lambda binding: binding['weighted_score'], reverse = True)
-    #bindings = bindings[offset:offset + limit]
     results_response['results']['bindings'] = bindings
 
-    '''
     for i in range(len(bindings)):
         print(i)
         print('uri: ' + bindings[i]['subject']['value'])
         print('pagerank: ' + str(bindings[i]['pagerank']))
         print('match_score: ' + str(bindings[i]['match_score']))
         print('weighted_score: ' + str(bindings[i]['weighted_score']))
-    '''
 
     return results_response
 
 
 def weight(pagerank, match_score, num_parts):
-    pagerank_weight = 0 * num_parts
+    pagerank_weight = 10 * num_parts
     match_score_weight = 1
     return pagerank_weight * pagerank + match_score_weight * match_score
 

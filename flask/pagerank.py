@@ -1,13 +1,27 @@
 from xml.etree import ElementTree
-import requests
-import urllib.parse
 import numpy as np
+import sparql_util
 
 
-class ranks:
-    def __init__(self, pr_vector, uri2index):
-        self.pr_vector = pr_vector
-        self.uri2index = uri2index
+usage_query = '''
+select distinct ?pcd ?ie ?ccd
+WHERE
+{
+?pcd a sbol:ComponentDefinition ;
+sbol:component ?sc;
+prov:wasDerivedFrom ?ie .
+
+?sc sbol:definition ?ccd
+}
+'''
+
+uri_query = '''
+select distinct ?cd
+WHERE
+{
+?cd a sbol:ComponentDefinition
+}
+'''
 
 
 class graph:
@@ -76,54 +90,6 @@ class graph:
         
         self.dangling_pages = set()
         self.init_dangling_pages(usages)
-
-
-endpoint = 'http://localhost:7777/sparql?'
-
-query_prefix = '''
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX dcterms: <http://purl.org/dc/terms/>
-PREFIX dc: <http://purl.org/dc/elements/1.1/>
-PREFIX sbh: <http://wiki.synbiohub.org/wiki/Terms/synbiohub#>
-PREFIX prov: <http://www.w3.org/ns/prov#>
-PREFIX sbol: <http://sbols.org/v2#>
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX purl: <http://purl.obolibrary.org/obo/>
-'''
-
-usage_query = query_prefix + '''
-select distinct ?pcd ?ie ?ccd
-WHERE
-{
-?pcd a sbol:ComponentDefinition ;
-sbol:component ?sc;
-prov:wasDerivedFrom ?ie .
-
-?sc sbol:definition ?ccd
-}
-'''
-
-uri_query = query_prefix + '''
-select distinct ?cd
-WHERE
-{
-?cd a sbol:ComponentDefinition
-}
-'''
-
-
-def query_sparql(query):
-    url = endpoint + urllib.parse.urlencode({'query': query})
-    print(url)
-    r = requests.get(url)
-
-    print(r.status_code)
-    print(r.encoding)
-    print(r.headers['content-type'])
-    print(r.content[0:100])
-
-    return r.content
 
 
 # add uris as keys to usages
@@ -196,15 +162,31 @@ def pagerank(g, s=0.85, tolerance=0.001):
     return p
 
 
+def make_uri2rank(pr_vector, uri2index):
+    uri2rank = {}
+
+    for uri in uri2index:
+        uri2rank[uri] = pr_vector[uri2index[uri]]
+
+    return uri2rank
+
+
 def update_pagerank():
-    uri_response = query_sparql(uri_query)
+    print('Query for uris')
+    uri_response = sparql_util.query_sparql(uri_query)
+    print('Query for uris complete')
     usages = populate_usage_uris(uri_response)
 
-    usage_response = query_sparql(usage_query)
+    print('Query for usages')
+    usage_response = sparql_util.query_sparql(usage_query)
+    print('Query for usages complete')
     add_usages(usage_response, usages)
 
     g = graph(usages)
+    print('Running pagerank')
     pr = pagerank(g)
+    print('Running pagerank complete')
     pr_vector = np.squeeze(np.asarray(pr))
-    return ranks(pr_vector, g.uri2index)
+
+    return make_uri2rank(pr_vector, g.uri2index)
 
