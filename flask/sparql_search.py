@@ -3,13 +3,37 @@ from elasticsearch_dsl import Search
 import re
 
 
-es = Elasticsearch(['http://localhost:9200/'], verify_certs=True)
-
-
 def search_es(es_query, limit, offset):
-    s = Search(using=es, index='part').query('multi_match', query=es_query, fields=['subject', 'displayId', 'version', 'name', 'description', 'type'])
-    s = s[offset:offset + limit]
-    return s.execute()
+    es = Elasticsearch(['http://localhost:9200/'], verify_certs=True)
+    body = {
+        'query': {
+            'function_score': {
+                'query': {
+                    'multi_match': {
+                        'query': es_query,
+                        'fields': [
+                            'subject',
+                            'displayId',
+                            'version',
+                            'name',
+                            'description',
+                            'type'
+                        ],
+                        'operator': 'and',
+                        'fuzziness': 'AUTO',
+                    }
+                },
+                'script_score': {
+                    'script': {
+                        'source': "_score * Math.log(doc['pagerank'].value + 1)"
+                    }
+                }
+            }
+        },
+        'from': offset,
+        'size': limit
+    }
+    return es.search(index='part', body=body)
 
 
 def extract_query(sparql_query):
@@ -38,76 +62,62 @@ def is_count_query(sparql_query):
 
 def create_count_response(es_response):
     count_response = {"head":{"link":[],"vars":["count"]},"results":{"distinct":False,"ordered":True,"bindings":[{"count":{"type":"typed-literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"10"}}]}}
-    count_response['results']['bindings'][0]['count']['value'] = str(es_response.hits.total)
+    count_response['results']['bindings'][0]['count']['value'] = str(es_response['hits']['total'])
     return count_response
 
 
-def create_results_response(es_response, limit, offset, ranks):
+def create_results_response(es_response, limit, offset):
     results_response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
 
     bindings = []
-    for hit in es_response:
-        pagerank = ranks.pr_vector[ranks.uri2index[hit.subject]] # TODO make sure type is not float is ok
-        match_score = hit.meta.score
-        weighted_score = weight(pagerank, match_score, len(ranks.pr_vector))
-
+    for hit in es_response['hits']['hits']:
+        _source = hit['_source']
         binding = {
             "subject": {
                 "type": "uri",
                 "datatype": "http://www.w3.org/2001/XMLSchema#uri",
-                "value": hit.subject
+                "value": _source['subject']
             },
             "displayId": {
                 "type": "literal",
                 "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                "value": hit.displayId
+                "value": _source['displayId']
             },
             "version": {
                 "type": "literal",
                 "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                "value": hit.version
+                "value": _source['version']
             },
             "name": {
                 "type": "literal",
                 "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                "value": hit.name
+                "value": _source['name']
             },
             "description": {
                 "type": "literal",
                 "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                "value": hit.description
+                "value": _source['description']
             },
             "type": {
                 "type": "uri",
                 "datatype": "http://www.w3.org/2001/XMLSchema#uri",
-                "value": hit.type
+                "value": _source['type']
             },
-            "pagerank": pagerank,
-            "match_score": match_score,
-            "weighted_score": weighted_score
+            "pagerank": _source['pagerank'],
+            "_score": hit['_score']
         }
         bindings.append(binding)
 
-    bindings.sort(key = lambda binding: binding['weighted_score'], reverse = True)
     results_response['results']['bindings'] = bindings
 
-    for i in range(len(bindings)):
-        print(i)
-        print('uri: ' + bindings[i]['subject']['value'])
-        print('pagerank: ' + str(bindings[i]['pagerank']))
-        print('match_score: ' + str(bindings[i]['match_score']))
-        print('weighted_score: ' + str(bindings[i]['weighted_score']))
+    print('results:')
+    for binding in bindings:
+        print('uri: ' + binding['subject']['value'] + ' _score: ' + str(binding['_score']) + ' pagerank: ' + str(binding['pagerank']))
 
     return results_response
 
 
-def weight(pagerank, match_score, num_parts):
-    pagerank_weight = 10 * num_parts
-    match_score_weight = 1
-    return pagerank_weight * pagerank + match_score_weight * match_score
-
-
-def sparql_search(sparql_query, ranks):
+def sparql_search(sparql_query):
     es_query, limit, offset = extract_query(sparql_query)
 
     es_response = search_es(es_query, limit, offset)
@@ -115,5 +125,5 @@ def sparql_search(sparql_query, ranks):
     if is_count_query(sparql_query):
         return create_count_response(es_response)
     else:
-        return create_results_response(es_response, limit, offset, ranks)
+        return create_results_response(es_response, limit, offset)
 
