@@ -3,7 +3,7 @@ from elasticsearch_dsl import Search
 import re
 
 
-def search_es(es_query, limit, offset):
+def search_es(es_query):
     es = Elasticsearch(['http://localhost:9200/'], verify_certs=True)
     body = {
         'query': {
@@ -30,8 +30,8 @@ def search_es(es_query, limit, offset):
                 }
             }
         },
-        'from': offset,
-        'size': limit
+        'from': 0,
+        'size': 10000
     }
     return es.search(index='part', body=body)
 
@@ -43,32 +43,41 @@ def extract_query(sparql_query):
         keywords.append(keyword)
     es_query = ' '.join(keywords)
 
-    limit = 50
-    limit_search = re.search(r'''LIMIT (\d*)''', sparql_query)
-    if limit_search:
-        limit = int(limit_search.group(1))
-
     offset = 0
     offset_search = re.search(r'''OFFSET (\d*)''', sparql_query)
     if offset_search:
         offset = int(offset_search.group(1))
 
-    return es_query, limit, offset
+    limit = 50
+    limit_search = re.search(r'''LIMIT (\d*)''', sparql_query)
+    if limit_search:
+        limit = int(limit_search.group(1))
+
+    return es_query, offset, limit
 
 
 def is_count_query(sparql_query):
     return 'SELECT (count(distinct' in sparql_query
 
 
-def create_count_response(es_response):
+def create_count_response(count):
     count_response = {"head":{"link":[],"vars":["count"]},"results":{"distinct":False,"ordered":True,"bindings":[{"count":{"type":"typed-literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"10"}}]}}
-    count_response['results']['bindings'][0]['count']['value'] = str(es_response['hits']['total'])
+    count_response['results']['bindings'][0]['count']['value'] = str(count)
     return count_response
 
 
-def create_results_response(es_response, limit, offset):
+def create_results_response(bindings):
     results_response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
+    results_response['results']['bindings'] = bindings
 
+    #print('results:')
+    #for binding in bindings:
+    #    print('uri: ' + binding['subject']['value'] + ' _score: ' + str(binding['_score']) + ' pagerank: ' + str(binding['pagerank']))
+
+    return results_response
+
+
+def create_bindings(es_response):
     bindings = []
     for hit in es_response['hits']['hits']:
         _source = hit['_source']
@@ -108,22 +117,20 @@ def create_results_response(es_response, limit, offset):
         }
         bindings.append(binding)
 
-    results_response['results']['bindings'] = bindings
-
-    print('results:')
-    for binding in bindings:
-        print('uri: ' + binding['subject']['value'] + ' _score: ' + str(binding['_score']) + ' pagerank: ' + str(binding['pagerank']))
-
-    return results_response
+    return bindings
 
 
 def sparql_search(sparql_query):
-    es_query, limit, offset = extract_query(sparql_query)
+    es_query, offset, limit = extract_query(sparql_query)
 
-    es_response = search_es(es_query, limit, offset)
+    es_response = search_es(es_query)
+    print('execution time (ms): ' + str(es_response['took']))
+
+    bindings = create_bindings(es_response)
 
     if is_count_query(sparql_query):
-        return create_count_response(es_response)
+        return create_count_response(len(bindings))
     else:
-        return create_results_response(es_response, limit, offset)
+        bindings = bindings[offset:offset + limit]
+        return create_results_response(bindings)
 
