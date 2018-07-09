@@ -1,11 +1,12 @@
 from flask import Flask
 from flask import request
 from flask import jsonify
-import sparql_search
+import logging
+import cluster
 import pagerank
 import index
+import search
 import utils
-import logging
 
 
 log = logging.getLogger('werkzeug')
@@ -19,18 +20,20 @@ def hello_world():
     return 'Hello, World!'
 
 
-@app.route('/update_clusters')
-def update_clusters():
-    return 'TODO'
-
+clusters = None
+clusters_filename = 'dumps/clusters_dump'
 
 uri2rank = None
-uri2rank_filename = 'uri2rank_dump'
+uri2rank_filename = 'dumps/uri2rank_dump'
 
 
 @app.route('/update_index')
 def update_index():
+    global clusters
     global uri2rank
+
+    clusters = cluster.update_clusters()
+    utils.serialize(clusters, clusters_filename)
 
     uri2rank = pagerank.update_pagerank()
     utils.serialize(uri2rank, uri2rank_filename)
@@ -44,11 +47,15 @@ def update_index():
 
 @app.route('/')
 def sparql_search_endpoint():
+    global clusters
     global uri2rank
+
+    if clusters is None:
+        clusters = utils.deserialize(clusters_filename)
 
     if uri2rank is None:
         uri2rank = utils.deserialize(uri2rank_filename)
 
     sparql_query = request.args.get('query')
-    return jsonify(sparql_search.sparql_search(sparql_query, uri2rank))
+    return jsonify(search.search(sparql_query, uri2rank, clusters))
 
