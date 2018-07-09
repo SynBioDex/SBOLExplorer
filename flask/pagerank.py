@@ -1,25 +1,25 @@
 from xml.etree import ElementTree
 import numpy as np
-import sparql_util
+import utils
 
 
 usage_query = '''
-select distinct ?pcd ?ie ?ccd
+SELECT DISTINCT ?pcd ?ie ?ccd
 WHERE
 {
-?pcd a sbol:ComponentDefinition ;
-sbol:component ?sc;
-prov:wasDerivedFrom ?ie .
+    ?pcd a sbol2:ComponentDefinition ;
+    sbol2:component ?sc;
+    prov:wasDerivedFrom ?ie .
 
-?sc sbol:definition ?ccd
+    ?sc sbol2:definition ?ccd
 }
 '''
 
 uri_query = '''
-select distinct ?cd
+SELECT DISTINCT ?subject
 WHERE
 {
-?cd a sbol:ComponentDefinition
+    ?subject sbh:topLevel ?subject
 }
 '''
 
@@ -105,10 +105,10 @@ def populate_usage_uris(uri_response):
         bindings = result.findall('sparql_results:binding', ns)
 
         for binding in bindings:
-            if binding.attrib['name'] == 'cd':
-                cd = binding.find('sparql_results:uri', ns).text
+            if binding.attrib['name'] == 'subject':
+                subject = binding.find('sparql_results:uri', ns).text
 
-        usages[cd] = []
+        usages[subject] = []
     
     return usages
 
@@ -173,12 +173,12 @@ def make_uri2rank(pr_vector, uri2index):
 
 def update_pagerank():
     print('Query for uris')
-    uri_response = sparql_util.query_sparql(uri_query)
+    uri_response = utils.query_sparql(uri_query)
     print('Query for uris complete')
     usages = populate_usage_uris(uri_response)
 
     print('Query for usages')
-    usage_response = sparql_util.query_sparql(usage_query)
+    usage_response = utils.query_sparql(usage_query)
     print('Query for usages complete')
     add_usages(usage_response, usages)
 

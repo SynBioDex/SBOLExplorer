@@ -1,10 +1,14 @@
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search
+from xml.etree import ElementTree
 import re
+import utils
+
+
+es = Elasticsearch(['http://localhost:9200/'], verify_certs=True)
 
 
 def search_es(es_query):
-    es = Elasticsearch(['http://localhost:9200/'], verify_certs=True)
     body = {
         'query': {
             'function_score': {
@@ -37,11 +41,18 @@ def search_es(es_query):
 
 
 def extract_query(sparql_query):
-    extract_keyword_re = re.compile(r'''CONTAINS\(lcase\(\?displayId\), lcase\('([^']*)'\)\)''')
-    keywords = []
-    for keyword in re.findall(extract_keyword_re, sparql_query):
-        keywords.append(keyword)
-    es_query = ' '.join(keywords)
+    _from = ''
+    if is_count_query(sparql_query):
+        _from_search = re.search(r'''SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {''', sparql_query)
+    else:
+        _from_search = re.search(r'''(.*)\s*WHERE {''', sparql_query)
+    if _from_search:
+        _from = _from_search.group(1)
+
+    criteria = ''
+    criteria_search = re.search(r'''WHERE {\s*(.*)\s*\?subject a \?type \.''', sparql_query)
+    if criteria_search:
+        criteria = criteria_search.group(1)
 
     offset = 0
     offset_search = re.search(r'''OFFSET (\d*)''', sparql_query)
@@ -53,7 +64,13 @@ def extract_query(sparql_query):
     if limit_search:
         limit = int(limit_search.group(1))
 
-    return es_query, offset, limit
+    extract_keyword_re = re.compile(r'''CONTAINS\(lcase\(\?displayId\), lcase\('([^']*)'\)\)''')
+    keywords = []
+    for keyword in re.findall(extract_keyword_re, criteria):
+        keywords.append(keyword)
+    es_query = ' '.join(keywords)
+
+    return es_query, _from, criteria, offset, limit
 
 
 def is_count_query(sparql_query):
@@ -72,61 +89,161 @@ def create_results_response(bindings):
 
     #print('results:')
     #for binding in bindings:
-    #    print('uri: ' + binding['subject']['value'] + ' _score: ' + str(binding['_score']) + ' pagerank: ' + str(binding['pagerank']))
+    #    print('uri: ' + binding['subject']['value'] + ' pagerank: ' + str(binding['pagerank']))
 
     return results_response
 
 
-def create_bindings(es_response):
+def create_binding(subject, displayId, version, name, description, _type, pagerank):
+    binding = {
+        "subject": {
+            "type": "uri",
+            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
+            "value": subject
+        },
+        "displayId": {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": displayId
+        },
+        "version": {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": version
+        },
+        "name": {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": name
+        },
+        "description": {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": description
+        },
+        "type": {
+            "type": "uri",
+            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
+            "value": _type
+        },
+        "pagerank": pagerank
+    }
+    return binding
+
+
+def create_bindings(es_response, allowed_subjects):
     bindings = []
     for hit in es_response['hits']['hits']:
         _source = hit['_source']
-        binding = {
-            "subject": {
-                "type": "uri",
-                "datatype": "http://www.w3.org/2001/XMLSchema#uri",
-                "value": _source['subject']
-            },
-            "displayId": {
-                "type": "literal",
-                "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                "value": _source['displayId']
-            },
-            "version": {
-                "type": "literal",
-                "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                "value": _source['version']
-            },
-            "name": {
-                "type": "literal",
-                "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                "value": _source['name']
-            },
-            "description": {
-                "type": "literal",
-                "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                "value": _source['description']
-            },
-            "type": {
-                "type": "uri",
-                "datatype": "http://www.w3.org/2001/XMLSchema#uri",
-                "value": _source['type']
-            },
-            "pagerank": _source['pagerank'],
-            "_score": hit['_score']
-        }
+
+        if allowed_subjects is not None and _source['subject'] not in allowed_subjects:
+            continue
+
+        binding = create_binding(_source['subject'], 
+                _source['displayId'],
+                _source['version'],
+                _source['name'],
+                _source['description'],
+                _source['type'],
+                _source['pagerank'])
+
         bindings.append(binding)
 
     return bindings
 
 
-def sparql_search(sparql_query):
-    es_query, offset, limit = extract_query(sparql_query)
+def create_criteria_bindings(criteria_response, uri2rank):
+    bindings = []
 
-    es_response = search_es(es_query)
-    print('execution time (ms): ' + str(es_response['took']))
+    parts = utils.create_parts(criteria_response)
 
-    bindings = create_bindings(es_response)
+    for part in parts:
+        subject = part['subject']
+        if subject not in uri2rank:
+            pagerank = 1
+        else:
+            pagerank = uri2rank[subject]
+
+        binding = create_binding(part['subject'],
+                part['displayId'],
+                part['version'],
+                part['name'],
+                part['description'],
+                part['type'],
+                pagerank)
+
+        bindings.append(binding)
+
+    bindings.sort(key = lambda binding: binding['pagerank'], reverse = True)
+    return bindings
+
+
+# returns None if there is are no criteria outside of a string FILTER
+def query_criteria(_from, criteria):
+    criteria = re.sub('FILTER .*', '', criteria)
+    
+    if criteria == '' or criteria.isspace():
+        return None
+
+    criteria_query = '''
+    SELECT DISTINCT
+        ?subject
+        ?displayId
+        ?version
+        ?name
+        ?description
+        ?type
+    ''' + _from + '''
+    WHERE {
+    ''' + criteria + '''
+
+        ?subject a ?type .
+        ?subject sbh:topLevel ?subject
+        OPTIONAL { ?subject sbol2:displayId ?displayId . }
+        OPTIONAL { ?subject sbol2:version ?version . }
+        OPTIONAL { ?subject dcterms:title ?name . }
+        OPTIONAL { ?subject dcterms:description ?description . }
+    } 
+    '''
+
+    return utils.query_sparql(criteria_query)
+
+
+# TODO use create_parts instead
+def get_allowed_subjects(criteria_response):
+    if criteria_response is None:
+        return None
+
+    subjects = set()
+    
+    ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
+    
+    root = ElementTree.fromstring(criteria_response)
+    results = root.find('sparql_results:results', ns)
+
+    for result in results.findall('sparql_results:result', ns):
+        bindings = result.findall('sparql_results:binding', ns)
+
+        for binding in bindings:
+            if binding.attrib['name'] == 'subject':
+                subject = binding.find('sparql_results:uri', ns).text
+
+        subjects.add(subject)
+    
+    return subjects
+
+
+def sparql_search(sparql_query, uri2rank):
+    es_query, _from, criteria, offset, limit = extract_query(sparql_query)
+
+    criteria_response = query_criteria(_from, criteria)
+
+    if (es_query == '' or es_query.isspace()) and criteria_response is not None:
+        bindings = create_criteria_bindings(criteria_response, uri2rank)
+    else:
+        allowed_subjects = get_allowed_subjects(criteria_response)
+        es_response = search_es(es_query)
+        bindings = create_bindings(es_response, allowed_subjects)
 
     if is_count_query(sparql_query):
         return create_count_response(len(bindings))

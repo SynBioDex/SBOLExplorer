@@ -1,8 +1,7 @@
-import sparql_util
-from xml.etree import ElementTree
 from elasticsearch import Elasticsearch
 from elasticsearch import ElasticsearchException
 from elasticsearch import helpers
+import utils
 
 
 parts_query = '''
@@ -14,70 +13,14 @@ SELECT DISTINCT
     ?description
     ?type
 WHERE {
-    ?subject a sbol:ComponentDefinition .
     ?subject a ?type .
     ?subject sbh:topLevel ?subject
-    OPTIONAL { ?subject sbol:displayId ?displayId . }
-    OPTIONAL { ?subject sbol:version ?version . }
+    OPTIONAL { ?subject sbol2:displayId ?displayId . }
+    OPTIONAL { ?subject sbol2:version ?version . }
     OPTIONAL { ?subject dcterms:title ?name . }
     OPTIONAL { ?subject dcterms:description ?description . }
 } 
 '''
-
-
-def create_parts(parts_response):
-    parts = []
-    
-    ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
-    
-    root = ElementTree.fromstring(parts_response)
-    results = root.find('sparql_results:results', ns)
-
-    for result in results.findall('sparql_results:result', ns):
-        bindings = result.findall('sparql_results:binding', ns)
-
-        subject = 'no subject'
-        for binding in bindings:
-            if binding.attrib['name'] == 'subject':
-                subject = binding.find('sparql_results:uri', ns).text
-
-        display_id = 'no displayId'
-        for binding in bindings:
-            if binding.attrib['name'] == 'displayId':
-                display_id = binding.find('sparql_results:literal', ns).text
-                
-        version = 'no version'
-        for binding in bindings:
-            if binding.attrib['name'] == 'version':
-                version = binding.find('sparql_results:literal', ns).text
-        
-        name = 'no name'
-        for binding in bindings:
-            if binding.attrib['name'] == 'name':
-                name = binding.find('sparql_results:literal', ns).text
-        
-        description = 'no description'
-        for binding in bindings:
-            if binding.attrib['name'] == 'description':
-                description = binding.find('sparql_results:literal', ns).text
-                
-        _type = 'no type'
-        for binding in bindings:
-            if binding.attrib['name'] == 'type':
-                _type = binding.find('sparql_results:uri', ns).text
-
-        part = {
-            'subject': subject,
-            'displayId': display_id,
-            'version': version,
-            'name': name,
-            'description': description,
-            'type': _type
-        }
-        parts.append(part)
-    
-    return parts
-
 
 def add_pagerank(parts, uri2rank):
     for part in parts:
@@ -121,8 +64,8 @@ def update_index(uri2rank):
     if not es.ping():
         raise ValueError('Connection failed')
 
-    parts_response = sparql_util.query_sparql(parts_query)
-    parts = create_parts(parts_response)	
+    parts_response = utils.query_sparql(parts_query)
+    parts = utils.create_parts(parts_response)	
     add_pagerank(parts, uri2rank)
     create_parts_index(es, index_name)
     index_parts(parts, es, index_name)
