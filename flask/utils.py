@@ -4,6 +4,7 @@ from xml.etree import ElementTree
 import pickle
 
 
+# TODO put all hardcoded fields into config file
 synbiohub_endpoint = 'http://localhost:7777/sparql?'
 
 query_prefix = '''

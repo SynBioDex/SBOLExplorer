@@ -1,5 +1,5 @@
 #!/bin/bash
-# My first script
+# TODO flesh out script to launch/start/set everything up
 
 echo "Starting SBOLExplorer"
 

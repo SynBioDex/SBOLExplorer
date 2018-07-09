@@ -9,15 +9,12 @@ import search
 import utils
 
 
+# TODO add switch to SynBioHub, write metric tester, test API with SBOLDesigner
+
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
-
-
-@app.route('/hello')
-def hello_world():
-    return 'Hello, World!'
 
 
 clusters = None
@@ -27,8 +24,18 @@ uri2rank = None
 uri2rank_filename = 'dumps/uri2rank_dump'
 
 
-@app.route('/update_index')
-def update_index():
+@app.route('/hello')
+def hello_world():
+    return 'Hello, World!'
+
+
+@app.route('/similar_parts')
+def similar_parts():
+    # TODO use clusters to get similar parts
+
+
+@app.route('/update')
+def update():
     global clusters
     global uri2rank
 
@@ -40,7 +47,7 @@ def update_index():
 
     index.update_index(uri2rank)
 
-    success_message = 'Index successfully updated!'
+    success_message = 'Successfully updated!'
     print(success_message)
     return success_message
 
