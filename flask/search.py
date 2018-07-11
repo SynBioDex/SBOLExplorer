@@ -29,7 +29,7 @@ def search_es(es_query):
                 },
                 'script_score': {
                     'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"
+                        'source': "_score * Math.log(doc['pagerank'].value + 1)" # Math.log is a natural log
                     }
                 }
             }
@@ -86,15 +86,10 @@ def create_count_response(count):
 def create_results_response(bindings):
     results_response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
     results_response['results']['bindings'] = bindings
-
-    #print('results:')
-    #for binding in bindings:
-    #    print('uri: ' + binding['subject']['value'] + ' pagerank: ' + str(binding['pagerank']))
-
     return results_response
 
 
-def create_binding(subject, displayId, version, name, description, _type, pagerank):
+def create_binding(subject, displayId, version, name, description, _type, order_by):
     binding = {
         "subject": {
             "type": "uri",
@@ -126,7 +121,7 @@ def create_binding(subject, displayId, version, name, description, _type, pagera
             "datatype": "http://www.w3.org/2001/XMLSchema#uri",
             "value": _type
         },
-        "pagerank": pagerank
+        "order_by": order_by
     }
     return binding
 
@@ -138,13 +133,14 @@ def create_bindings(es_response, allowed_subjects, clusters):
 
     for hit in es_response['hits']['hits']:
         _source = hit['_source']
+        _score = hit['_score']
         subject = _source['subject']
 
         if allowed_subjects is not None and subject not in allowed_subjects:
             continue
         
         if subject in cluster_duplicates:
-            continue
+            _score = _score / 2.0
         elif subject in clusters:
             cluster_duplicates.update(clusters[subject])
 
@@ -154,7 +150,7 @@ def create_bindings(es_response, allowed_subjects, clusters):
                 _source['name'],
                 _source['description'],
                 _source['type'],
-                _source['pagerank'])
+                _score)
 
         bindings.append(binding)
 
@@ -183,7 +179,6 @@ def create_criteria_bindings(criteria_response, uri2rank):
 
         bindings.append(binding)
 
-    bindings.sort(key = lambda binding: binding['pagerank'], reverse = True)
     return bindings
 
 
@@ -253,6 +248,8 @@ def search(sparql_query, uri2rank, clusters):
         allowed_subjects = get_allowed_subjects(criteria_response)
         es_response = search_es(es_query)
         bindings = create_bindings(es_response, allowed_subjects, clusters)
+
+    bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
 
     if is_count_query(sparql_query):
         return create_count_response(len(bindings))
