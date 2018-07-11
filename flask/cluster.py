@@ -3,7 +3,7 @@ import subprocess
 import utils
 
 
-uclust_identity = '0.8' # how similar sequences in the same cluster must be
+uclust_identity = utils.get_config()['uclust_identity'] # how similar sequences in the same cluster must be
 sequences_filename = 'usearch/sequences.fsa'
 usearch_binary_filename = 'usearch/usearch10.0.240_i86linux32'
 uclust_results_filename = 'usearch/uclust_results.uc'

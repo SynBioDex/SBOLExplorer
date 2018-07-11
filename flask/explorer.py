@@ -24,14 +24,14 @@ uri2rank = None
 uri2rank_filename = 'dumps/uri2rank_dump'
 
 
-@app.route('/hello')
-def hello_world():
-    return 'Hello, World!'
+@app.route('/info')
+def info():
+    return 'Explorer up!!! Virtutoso ' + str(utils.memoized_query_sparql.cache_info())
 
 
-@app.route('/similar_parts')
-def similar_parts():
-    # TODO use clusters to get similar parts
+#@app.route('/similar_parts')
+#def similar_parts():
+# TODO use clusters to get similar parts
 
 
 @app.route('/update')

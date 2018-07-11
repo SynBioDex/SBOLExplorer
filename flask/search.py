@@ -5,7 +5,7 @@ import re
 import utils
 
 
-es = Elasticsearch(['http://localhost:9200/'], verify_certs=True)
+es = Elasticsearch([utils.get_config()['elasticsearch_endpoint']], verify_certs=True)
 
 
 def search_es(es_query):
@@ -215,7 +215,7 @@ def query_criteria(_from, criteria):
     } 
     '''
 
-    return utils.query_sparql(criteria_query)
+    return utils.memoized_query_sparql(criteria_query)
 
 
 # TODO use create_parts instead

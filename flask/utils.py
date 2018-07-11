@@ -1,11 +1,17 @@
 import requests
 import urllib.parse
 from xml.etree import ElementTree
+from functools import lru_cache
 import pickle
+import json
 
 
-# TODO put all hardcoded fields into config file
-synbiohub_endpoint = 'http://localhost:7777/sparql?'
+def get_config():
+    with open('config.json') as f:
+        config = json.load(f)
+
+    return config
+
 
 query_prefix = '''
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -23,8 +29,13 @@ PREFIX ncbi: <http://www.ncbi.nlm.nih.gov#>
 '''
 
 
+@lru_cache(maxsize=32)
+def memoized_query_sparql(query):
+    return query_sparql(query)
+
+
 def query_sparql(query):
-    url = synbiohub_endpoint + urllib.parse.urlencode({'query': query_prefix + query})
+    url = get_config()['synbiohub_sparql_endpoint'] + urllib.parse.urlencode({'query': query_prefix + query})
     r = requests.get(url)
 
     if r.status_code != 200:
@@ -98,5 +109,4 @@ def deserialize(filename):
     data = pickle.load(f)
     f.close()
     return data
-
 

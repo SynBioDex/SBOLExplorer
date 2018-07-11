@@ -58,9 +58,9 @@ def index_parts(parts, es, index_name):
 
 
 def update_index(uri2rank):
-    index_name = 'part'
+    index_name = utils.get_config()['elasticsearch_index_name']
 
-    es = Elasticsearch(['http://localhost:9200/'], verify_certs=True)
+    es = Elasticsearch([utils.get_config()['elasticsearch_endpoint']], verify_certs=True)
     if not es.ping():
         raise ValueError('Connection failed')
 

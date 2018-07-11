@@ -184,7 +184,7 @@ def update_pagerank():
 
     g = graph(usages)
     print('Running pagerank')
-    pr = pagerank(g)
+    pr = pagerank(g, tolerance=float(utils.get_config()['pagerank_tolerance']))
     print('Running pagerank complete')
     pr_vector = np.squeeze(np.asarray(pr))
 
