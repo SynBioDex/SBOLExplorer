@@ -103,3 +103,5 @@ ENV/
 
 # custom
 *.out
+flask/dumps/*
+flask/usearch/sequences.fsa
