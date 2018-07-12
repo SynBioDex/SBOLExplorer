@@ -3,15 +3,13 @@ import numpy as np
 import utils
 
 
-usage_query = '''
-SELECT DISTINCT ?pcd ?ie ?ccd
+link_query = '''
+SELECT DISTINCT ?parent ?child
 WHERE
 {
-    ?pcd a sbol2:ComponentDefinition ;
-    sbol2:component ?sc;
-    prov:wasDerivedFrom ?ie .
-
-    ?sc sbol2:definition ?ccd
+    ?parent sbh:topLevel ?parent .
+    ?child sbh:topLevel ?child .
+    { ?parent ?oneLink ?child } UNION { ?parent ?twoLinkOne ?tmp . ?tmp ?twoLinkTwo ?child }
 }
 '''
 
@@ -26,11 +24,11 @@ WHERE
 
 class graph:
     # create uri to index mapping
-    def init_mapping(self, usages):
+    def init_mapping(self, adjacency_list):
         uris = set()
-        for parent in usages:
+        for parent in adjacency_list:
             uris.add(parent)
-            for child in usages[parent]:
+            for child in adjacency_list[parent]:
                 uris.add(child)
 
         self.index2uri = list(uris)
@@ -47,54 +45,54 @@ class graph:
             assert(index == i)
     
     
-    def init_in_links(self, usages):
+    def init_in_links(self, adjacency_list):
         for j in range(self.size):
             self.in_links[j] = []
         
-        for parent in usages:
-            for child in usages[parent]:
+        for parent in adjacency_list:
+            for child in adjacency_list[parent]:
                 parent_idx = self.uri2index[parent]
                 child_idx = self.uri2index[child]
                 self.in_links[child_idx].append(parent_idx)
             
             
-    def init_number_out_links(self, usages):
+    def init_number_out_links(self, adjacency_list):
         for j in range(self.size):
             self.number_out_links[j] = 0
             
-        for parent in usages:
+        for parent in adjacency_list:
             parent_idx = self.uri2index[parent]
-            number_children = len(usages[parent])
+            number_children = len(adjacency_list[parent])
             self.number_out_links[parent_idx] = number_children
             
         
-    def init_dangling_pages(self, usages):
-        for parent in usages:
-            number_children = len(usages[parent])
+    def init_dangling_pages(self, adjacency_list):
+        for parent in adjacency_list:
+            number_children = len(adjacency_list[parent])
             if number_children == 0:
                 self.dangling_pages.add(self.uri2index[parent])
                 
                 
-    def __init__(self, usages):
+    def __init__(self, adjacency_list):
         self.index2uri = []
         self.uri2index = {}
-        self.init_mapping(usages)
+        self.init_mapping(adjacency_list)
         
         self.size = len(self.index2uri)
         
         self.in_links = {}
-        self.init_in_links(usages)
+        self.init_in_links(adjacency_list)
         
         self.number_out_links = {}
-        self.init_number_out_links(usages)
+        self.init_number_out_links(adjacency_list)
         
         self.dangling_pages = set()
-        self.init_dangling_pages(usages)
+        self.init_dangling_pages(adjacency_list)
 
 
-# add uris as keys to usages
-def populate_usage_uris(uri_response):
-    usages = {}
+# add uris as keys to adjacency_list
+def populate_uris(uri_response):
+    adjacency_list = {}
     
     ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
     
@@ -108,30 +106,30 @@ def populate_usage_uris(uri_response):
             if binding.attrib['name'] == 'subject':
                 subject = binding.find('sparql_results:uri', ns).text
 
-        usages[subject] = []
+        adjacency_list[subject] = []
     
-    return usages
+    return adjacency_list
 
 
-# add actual usage edges
-def add_usages(usage_response, usages):
+# add edges
+def populate_links(link_response, adjacency_list):
     ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
     
-    root = ElementTree.fromstring(usage_response)
+    root = ElementTree.fromstring(link_response)
     results = root.find('sparql_results:results', ns)
 
     for result in results.findall('sparql_results:result', ns):
         bindings = result.findall('sparql_results:binding', ns)
 
         for binding in bindings:
-            if binding.attrib['name'] == 'pcd':
-                pcd = binding.find('sparql_results:uri', ns).text
+            if binding.attrib['name'] == 'parent':
+                parent = binding.find('sparql_results:uri', ns).text
 
         for binding in bindings:
-            if binding.attrib['name'] == 'ccd':
-                ccd = binding.find('sparql_results:uri', ns).text
+            if binding.attrib['name'] == 'child':
+                child = binding.find('sparql_results:uri', ns).text
 
-        usages[pcd].append(ccd)
+        adjacency_list[parent].append(child)
 
 
 def pagerank(g, s=0.85, tolerance=0.001):
@@ -175,14 +173,14 @@ def update_pagerank():
     print('Query for uris')
     uri_response = utils.query_sparql(uri_query)
     print('Query for uris complete')
-    usages = populate_usage_uris(uri_response)
+    adjacency_list = populate_uris(uri_response)
 
-    print('Query for usages')
-    usage_response = utils.query_sparql(usage_query)
-    print('Query for usages complete')
-    add_usages(usage_response, usages)
+    print('Query for links')
+    link_response = utils.query_sparql(link_query)
+    print('Query for links complete')
+    populate_links(link_response, adjacency_list)
 
-    g = graph(usages)
+    g = graph(adjacency_list)
     print('Running pagerank')
     pr = pagerank(g, tolerance=float(utils.get_config()['pagerank_tolerance']))
     print('Running pagerank complete')

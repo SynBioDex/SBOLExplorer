@@ -9,7 +9,7 @@ import search
 import utils
 
 
-# TODO add switch to SynBioHub, write metric tester, test API with SBOLDesigner
+# TODO write metric tester, test API with SBOLDesigner
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -27,11 +27,6 @@ uri2rank_filename = 'dumps/uri2rank_dump'
 @app.route('/info')
 def info():
     return 'Explorer up!!! Virtutoso ' + str(utils.memoized_query_sparql.cache_info())
-
-
-#@app.route('/similar_parts')
-#def similar_parts():
-# TODO use clusters to get similar parts
 
 
 @app.route('/update')
