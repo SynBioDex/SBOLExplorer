@@ -126,7 +126,7 @@ def create_binding(subject, displayId, version, name, description, _type, order_
     return binding
 
 
-def create_bindings(es_response, allowed_subjects, clusters):
+def create_bindings(es_response, clusters, allowed_subjects = None):
     bindings = []
 
     cluster_duplicates = set()
@@ -182,13 +182,7 @@ def create_criteria_bindings(criteria_response, uri2rank):
     return bindings
 
 
-# returns None if there is are no criteria outside of a string FILTER
 def query_criteria(_from, criteria):
-    criteria = re.sub('FILTER .*', '', criteria)
-    
-    if criteria == '' or criteria.isspace():
-        return None
-
     criteria_query = '''
     SELECT DISTINCT
         ?subject
@@ -213,11 +207,7 @@ def query_criteria(_from, criteria):
     return utils.memoized_query_sparql(criteria_query)
 
 
-# TODO use create_parts instead
 def get_allowed_subjects(criteria_response):
-    if criteria_response is None:
-        return None
-
     subjects = set()
     
     ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
@@ -237,17 +227,39 @@ def get_allowed_subjects(criteria_response):
     return subjects
 
 
+def create_similar_criteria(criteria, clusters):
+    subject = criteria.split(':', 1)[1]
+
+    if subject not in clusters or not clusters[subject]:
+        return 'FILTER (?subject != ?subject)'
+
+    return 'FILTER (' + ' || '.join(['?subject = <' + duplicate + '>' for duplicate in clusters[subject]]) + ')'
+
+
 def search(sparql_query, uri2rank, clusters):
     es_query, _from, criteria, offset, limit = extract_query(sparql_query)
 
-    criteria_response = query_criteria(_from, criteria)
-
-    if (es_query == '' or es_query.isspace()) and criteria_response is not None:
+    if 'SIMILAR' in criteria:
+        # SIMILAR
+        similar_criteria = create_similar_criteria(criteria, clusters)
+        criteria_response = query_criteria(_from, similar_criteria) 
+        bindings = create_criteria_bindings(criteria_response, uri2rank)
+    elif 'USES' in criteria or 'TWINS' in criteria or es_query == '' or es_query.isspace():
+        # USES or TWINS or pure advanced search
+        criteria_response = query_criteria(_from, criteria)
         bindings = create_criteria_bindings(criteria_response, uri2rank)
     else:
-        allowed_subjects = get_allowed_subjects(criteria_response)
         es_response = search_es(es_query)
-        bindings = create_bindings(es_response, allowed_subjects, clusters)
+
+        filterless_criteria = re.sub('FILTER .*', '', criteria)
+        if filterless_criteria == '' or filterless_criteria.isspace():
+            # pure string search
+            bindings = create_bindings(es_response, clusters)
+        else:
+            # advanced search and string search
+            criteria_response = query_criteria(_from, filterless_criteria)
+            allowed_subjects = get_allowed_subjects(criteria_response)
+            bindings = create_bindings(es_response, clusters, allowed_subjects)
 
     bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
 
