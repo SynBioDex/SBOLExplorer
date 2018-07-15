@@ -17,11 +17,12 @@ def search_es(es_query):
                         'query': es_query,
                         'fields': [
                             'subject',
-                            'displayId', # TODO separate displayId into tokens in searchable field
+                            'displayId',
                             'version',
                             'name',
                             'description',
-                            'type'
+                            'type',
+                            'keywords'
                         ],
                         'operator': 'and',
                         'fuzziness': 'AUTO',

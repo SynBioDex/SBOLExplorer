@@ -27,6 +27,17 @@ def add_pagerank(parts, uri2rank):
         part['pagerank'] = uri2rank[part['subject']]
 
 
+def add_keywords(parts):
+    for part in parts:
+        keywords = []
+
+        displayId = part.get('displayId')
+        if displayId is not None:
+            keywords.extend(displayId.split('_'))
+
+        part['keywords'] = ' '.join(keywords)
+
+
 def create_parts_index(es, index_name):
     try:
         es.indices.create(index=index_name)
@@ -67,6 +78,7 @@ def update_index(uri2rank):
     parts_response = utils.query_sparql(parts_query)
     parts = utils.create_parts(parts_response)	
     add_pagerank(parts, uri2rank)
+    add_keywords(parts)
     create_parts_index(es, index_name)
     index_parts(parts, es, index_name)
 
