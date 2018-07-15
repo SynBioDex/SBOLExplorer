@@ -2,6 +2,17 @@
 
 SBOLExplorer is a service that simplifies the process of analyzing and searching for parts within genetic design repositories.  For questions, contact Michael Zhang at <michael13162@gmail.com>
 
+# Installation
+1. These installation steps assume you have the latest version of SynBioHub up and running on http://localhost:7777.  For instructions, see https://github.com/SynBioHub/synbiohub.
+2. Clone this repository with `git clone https://github.com/michael13162/SBOLExplorer.git`.
+3. Install and run ElasticSearch 6.3 (https://www.elastic.co/guide/en/elasticsearch/reference/current/install-elasticsearch.html).
+4. Install the latest version of Python 3 (https://www.python.org/downloads/).
+5. Go to the SBOLExplorer/flask directory and run `pip install -r requirements.txt` to install all the dependencies.
+6. Run SBOLExplorer using `./start.sh` in the SBOLExplorer/flask directory.
+7. In SynBioHub, go to the Admin->General page and specify http://localhost:13162/ as the SBOLExplorer endpoint, check the `Searching Using SBOLExplorer` checkbox, and click `Save`.  Searches will now go through SBOLExplorer.
+
+# Phase 0: Visualization
+
 ![alt text](https://raw.githubusercontent.com/michael13162/SBOLExplorer/master/visualization/network.png)
 
 To run a neat visualization, go to the force_directed_graph folder and run "http-server" in the command line.  Then, open the browser to the hosted page.  Shown is a network visualization of part usage in SynBioHub.
