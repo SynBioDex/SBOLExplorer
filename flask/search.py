@@ -90,39 +90,53 @@ def create_results_response(bindings):
 
 
 def create_binding(subject, displayId, version, name, description, _type, order_by):
-    binding = {
-        "subject": {
+    binding = {}
+
+    if subject is not None:
+        binding["subject"] = {
             "type": "uri",
             "datatype": "http://www.w3.org/2001/XMLSchema#uri",
             "value": subject
-        },
-        "displayId": {
+        }
+        
+    if displayId is not None:
+        binding["displayId"] = {
             "type": "literal",
             "datatype": "http://www.w3.org/2001/XMLSchema#string",
             "value": displayId
-        },
-        "version": {
+        }
+
+    if version is not None:
+        binding["version"] = {
             "type": "literal",
             "datatype": "http://www.w3.org/2001/XMLSchema#string",
             "value": version
-        },
-        "name": {
+        }
+
+    if name is not None:
+        binding["name"] = {
             "type": "literal",
             "datatype": "http://www.w3.org/2001/XMLSchema#string",
             "value": name
-        },
-        "description": {
+        }
+
+    if description is not None:
+        binding["description"] = {
             "type": "literal",
             "datatype": "http://www.w3.org/2001/XMLSchema#string",
             "value": description
-        },
-        "type": {
+        }
+
+    if _type is not None:
+        binding["type"] = {
             "type": "uri",
             "datatype": "http://www.w3.org/2001/XMLSchema#uri",
             "value": _type
-        },
-        "order_by": order_by
-    }
+        }
+
+    if order_by is not None:
+        binding["order_by"] = order_by
+
     return binding
 
 
@@ -145,11 +159,11 @@ def create_bindings(es_response, clusters, allowed_subjects = None):
             cluster_duplicates.update(clusters[subject])
 
         binding = create_binding(subject, 
-                _source['displayId'],
-                _source['version'],
-                _source['name'],
-                _source['description'],
-                _source['type'],
+                _source.get('displayId'),
+                _source.get('version'),
+                _source.get('name'),
+                _source.get('description'),
+                _source.get('type'),
                 _score)
 
         bindings.append(binding)
@@ -169,12 +183,12 @@ def create_criteria_bindings(criteria_response, uri2rank):
         else:
             pagerank = uri2rank[subject]
 
-        binding = create_binding(part['subject'],
-                part['displayId'],
-                part['version'],
-                part['name'],
-                part['description'],
-                part['type'],
+        binding = create_binding(part.get('subject'),
+                part.get('displayId'),
+                part.get('version'),
+                part.get('name'),
+                part.get('description'),
+                part.get('type'),
                 pagerank)
 
         bindings.append(binding)

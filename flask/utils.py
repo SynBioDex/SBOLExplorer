@@ -55,44 +55,32 @@ def create_parts(parts_response):
     for result in results.findall('sparql_results:result', ns):
         bindings = result.findall('sparql_results:binding', ns)
 
-        subject = 'no subject'
+        part = {}
+
         for binding in bindings:
             if binding.attrib['name'] == 'subject':
-                subject = binding.find('sparql_results:uri', ns).text
+                part['subject'] = binding.find('sparql_results:uri', ns).text
 
-        display_id = 'no displayId'
         for binding in bindings:
             if binding.attrib['name'] == 'displayId':
-                display_id = binding.find('sparql_results:literal', ns).text
+                part['displayId'] = binding.find('sparql_results:literal', ns).text
                 
-        version = 'no version'
         for binding in bindings:
             if binding.attrib['name'] == 'version':
-                version = binding.find('sparql_results:literal', ns).text
+                part['version'] = binding.find('sparql_results:literal', ns).text
         
-        name = 'no name'
         for binding in bindings:
             if binding.attrib['name'] == 'name':
-                name = binding.find('sparql_results:literal', ns).text
+                part['name'] = binding.find('sparql_results:literal', ns).text
         
-        description = 'no description'
         for binding in bindings:
             if binding.attrib['name'] == 'description':
-                description = binding.find('sparql_results:literal', ns).text
+                part['description'] = binding.find('sparql_results:literal', ns).text
                 
-        _type = 'no type'
         for binding in bindings:
             if binding.attrib['name'] == 'type':
-                _type = binding.find('sparql_results:uri', ns).text
+                part['type'] = binding.find('sparql_results:uri', ns).text
 
-        part = {
-            'subject': subject,
-            'displayId': display_id,
-            'version': version,
-            'name': name,
-            'description': description,
-            'type': _type
-        }
         parts.append(part)
     
     return parts
