@@ -126,7 +126,7 @@ def update_clusters():
     write_fasta(sequences)
 
     print('Running uclust')
-    #run_uclust() # TODO uncomment this on working machine
+    run_uclust()
     print('Running uclust complete')
 
     analyze_uclust()
