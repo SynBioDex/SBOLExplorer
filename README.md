@@ -9,8 +9,9 @@ SBOLExplorer is a service that simplifies the process of analyzing and searching
 4. Install the latest version of Python 3 (https://www.python.org/downloads/).
 5. Go to the SBOLExplorer/flask directory and run `pip install -r requirements.txt` to install all the dependencies.
 6. Run SBOLExplorer using `./start.sh` in the SBOLExplorer/flask directory.
-7. Optionally, run `crontab update.cron` to automatically update SBOLExplorer periodically.
-8. In SynBioHub, go to the Admin->General page and specify http://localhost:13162/ as the SBOLExplorer endpoint, check the `Searching Using SBOLExplorer` checkbox, and click `Save`.  Searches will now go through SBOLExplorer.
+7. To update the index for the first time, run `curl -X GET "localhost:13162/update"`.  Depending on repository size, this can take a couple of minutes.
+8. Optionally, run `crontab update.cron` to automatically update SBOLExplorer periodically.
+9. In SynBioHub, go to the Admin->General page and specify http://localhost:13162/ as the SBOLExplorer endpoint, check the `Searching Using SBOLExplorer` checkbox, and click `Save`.  Searches will now go through SBOLExplorer.
 
 # Phase 0: Visualization
 
