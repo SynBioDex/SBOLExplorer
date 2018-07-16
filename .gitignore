@@ -106,4 +106,3 @@ ENV/
 flask/dumps/*
 flask/usearch/sequences.fsa
 flask/usearch/uclust_results.uc
-
