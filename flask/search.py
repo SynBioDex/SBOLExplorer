@@ -24,7 +24,7 @@ def search_es(es_query):
                             'type',
                             'keywords'
                         ],
-                        'operator': 'and',
+                        'operator': 'or',
                         'fuzziness': 'AUTO',
                     }
                 },

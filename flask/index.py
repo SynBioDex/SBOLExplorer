@@ -82,5 +82,5 @@ def update_index(uri2rank):
     create_parts_index(es, index_name)
     index_parts(parts, es, index_name)
 
-    print('Number of parts: ' + str(len(parts))) # TODO only fetching first 50000 parts
+    print('Number of parts: ' + str(len(parts)))
 

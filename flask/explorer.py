@@ -11,8 +11,6 @@ import search
 import utils
 
 
-# TODO write metric tester, test API with SBOLDesigner, quick select
-
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
