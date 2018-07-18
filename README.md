@@ -5,7 +5,7 @@ SBOLExplorer is a service that simplifies the process of analyzing and searching
 # Installation
 1. These installation steps assume you have the latest version of SynBioHub up and running on http://localhost:7777.  For instructions, see https://github.com/SynBioHub/synbiohub.
 2. Clone this repository with `git clone https://github.com/michael13162/SBOLExplorer.git`.
-3. Install and run ElasticSearch 6.3 (https://www.elastic.co/guide/en/elasticsearch/reference/current/install-elasticsearch.html).
+3. Install and run ElasticSearch 6.3 (https://www.elastic.co/guide/en/elasticsearch/reference/current/install-elasticsearch.html).  Optionally, configure ElasticSearch to start on boot.
 4. Install the latest version of Python 3 (https://www.python.org/downloads/).
 5. Go to the SBOLExplorer/flask directory and run `pip install -r requirements.txt` to install all the dependencies.
 6. Run SBOLExplorer using `./start.sh` in the SBOLExplorer/flask directory.
