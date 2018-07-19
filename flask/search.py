@@ -159,6 +159,9 @@ def create_bindings(es_response, clusters, allowed_subjects = None):
         elif subject in clusters:
             cluster_duplicates.update(clusters[subject])
 
+        if _source['type'] == 'http://sbols.org/v2#Sequence':
+            _score = _score / 10.0
+
         binding = create_binding(subject, 
                 _source.get('displayId'),
                 _source.get('version'),
