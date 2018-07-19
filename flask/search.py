@@ -17,7 +17,7 @@ def search_es(es_query):
                         'query': es_query,
                         'fields': [
                             'subject',
-                            'displayId',
+                            'displayId^3',
                             'version',
                             'name',
                             'description',
