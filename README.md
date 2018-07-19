@@ -5,7 +5,8 @@ SBOLExplorer is a service that simplifies the process of analyzing and searching
 # Installation
 1. These installation steps assume you have the latest version of SynBioHub up and running on http://localhost:7777.  For instructions, see https://github.com/SynBioHub/synbiohub.
 2. Clone this repository with `git clone https://github.com/michael13162/SBOLExplorer.git`.
-3. Install and run ElasticSearch 6.3 (https://www.elastic.co/guide/en/elasticsearch/reference/current/install-elasticsearch.html).           * The exact steps will depend on your environment, so read the manual (aka RTFM).
+3. Install and run ElasticSearch 6.3 (https://www.elastic.co/guide/en/elasticsearch/reference/current/install-elasticsearch.html).
+    * The exact steps will depend on your environment, so read the manual (aka RTFM).
     * Set up the package repo to install ElasticSearch from.
     * Install ElasticSearch.
     * Start ElasticSearch (will be different depending on init vs systemd).
