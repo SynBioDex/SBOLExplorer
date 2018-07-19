@@ -46,7 +46,7 @@ def extract_query(sparql_query):
     if is_count_query(sparql_query):
         _from_search = re.search(r'''SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {''', sparql_query)
     else:
-        _from_search = re.search(r'''(.*)\s*WHERE {''', sparql_query)
+        _from_search = re.search(r'''\?type\n(.*)\s*WHERE {''', sparql_query)
     if _from_search:
         _from = _from_search.group(1)
 
