@@ -178,10 +178,9 @@ def create_bindings(es_response, clusters, allowed_subjects = None):
 def create_criteria_bindings(criteria_response, uri2rank):
     bindings = []
 
-    parts = utils.create_parts(criteria_response)
-
-    for part in parts:
+    for part in criteria_response:
         subject = part['subject']
+
         if subject not in uri2rank:
             pagerank = 1
         else:
@@ -227,20 +226,9 @@ def query_criteria(_from, criteria):
 
 def get_allowed_subjects(criteria_response):
     subjects = set()
-    
-    ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
-    
-    root = ElementTree.fromstring(criteria_response)
-    results = root.find('sparql_results:results', ns)
 
-    for result in results.findall('sparql_results:result', ns):
-        bindings = result.findall('sparql_results:binding', ns)
-
-        for binding in bindings:
-            if binding.attrib['name'] == 'subject':
-                subject = binding.find('sparql_results:uri', ns).text
-
-        subjects.add(subject)
+    for part in criteria_response:
+        subjects.add(part['subject'])
     
     return subjects
 

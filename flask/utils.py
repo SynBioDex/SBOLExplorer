@@ -36,54 +36,21 @@ def memoized_query_sparql(query):
 
 def query_sparql(query):
     url = get_config()['synbiohub_sparql_endpoint'] + urllib.parse.urlencode({'query': query_prefix + query})
-    r = requests.get(url)
+    headers = {'Accept': 'application/json'}
+    r = requests.get(url, headers=headers)
 
     if r.status_code != 200:
         print('Error, got status code: ' + str(r.status_code))
 
-    return r.content
+    results = []
 
+    for binding in r.json()['results']['bindings']:
+        result = {}
+        for key in binding:
+            result[key] = binding[key]['value']
+        results.append(result)
 
-def create_parts(parts_response):
-    parts = []
-    
-    ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
-    
-    root = ElementTree.fromstring(parts_response)
-    results = root.find('sparql_results:results', ns)
-
-    for result in results.findall('sparql_results:result', ns):
-        bindings = result.findall('sparql_results:binding', ns)
-
-        part = {}
-
-        for binding in bindings:
-            if binding.attrib['name'] == 'subject':
-                part['subject'] = binding.find('sparql_results:uri', ns).text
-
-        for binding in bindings:
-            if binding.attrib['name'] == 'displayId':
-                part['displayId'] = binding.find('sparql_results:literal', ns).text
-                
-        for binding in bindings:
-            if binding.attrib['name'] == 'version':
-                part['version'] = binding.find('sparql_results:literal', ns).text
-        
-        for binding in bindings:
-            if binding.attrib['name'] == 'name':
-                part['name'] = binding.find('sparql_results:literal', ns).text
-        
-        for binding in bindings:
-            if binding.attrib['name'] == 'description':
-                part['description'] = binding.find('sparql_results:literal', ns).text
-                
-        for binding in bindings:
-            if binding.attrib['name'] == 'type':
-                part['type'] = binding.find('sparql_results:uri', ns).text
-
-        parts.append(part)
-    
-    return parts
+    return results
 
 
 def serialize(data, filename):

@@ -19,36 +19,12 @@ WHERE {
 '''
 
 
-def create_sequences(sequences_response):
-    sequences = {}
-    
-    ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
-    
-    root = ElementTree.fromstring(sequences_response)
-    results = root.find('sparql_results:results', ns)
-
-    for result in results.findall('sparql_results:result', ns):
-        bindings = result.findall('sparql_results:binding', ns)
-
-        for binding in bindings:
-            if binding.attrib['name'] == 'subject':
-                subject = binding.find('sparql_results:uri', ns).text
-
-        for binding in bindings:
-            if binding.attrib['name'] == 'sequence':
-                sequence = binding.find('sparql_results:literal', ns).text
-
-        sequences[subject] = sequence
-    
-    return sequences
-
-
 def write_fasta(sequences):
     f = open(sequences_filename, 'w')
     
-    for subject in sequences.keys():
-        f.write('>%s\n' % subject)
-        f.write('%s\n' % sequences[subject])
+    for sequence in sequences:
+        f.write('>%s\n' % sequence['subject'])
+        f.write('%s\n' % sequence['sequence'])
     
     f.close()
     
@@ -122,8 +98,7 @@ def update_clusters():
     print('Query for sequences')
     sequences_response = utils.query_sparql(sequence_query)
     print('Query for sequences complete')
-    sequences = create_sequences(sequences_response)
-    write_fasta(sequences)
+    write_fasta(sequences_response)
 
     print('Running uclust')
     run_uclust()

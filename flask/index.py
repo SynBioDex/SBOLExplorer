@@ -22,13 +22,13 @@ WHERE {
 } 
 '''
 
-def add_pagerank(parts, uri2rank):
-    for part in parts:
+def add_pagerank(parts_response, uri2rank):
+    for part in parts_response:
         part['pagerank'] = uri2rank[part['subject']]
 
 
-def add_keywords(parts):
-    for part in parts:
+def add_keywords(parts_response):
+    for part in parts_response:
         keywords = []
 
         displayId = part.get('displayId')
@@ -48,14 +48,14 @@ def create_parts_index(es, index_name):
         print('Index deleted and recreated')
 
 
-def index_parts(parts, es, index_name):
+def index_parts(parts_response, es, index_name):
     actions = []
-    for i in range(len(parts)):
+    for i in range(len(parts_response)):
         action = {
             '_index': index_name,
             '_type': index_name,
             '_id': i,
-            '_source': parts[i]
+            '_source': parts_response[i]
         }
 
         actions.append(action)
@@ -76,11 +76,10 @@ def update_index(uri2rank):
         raise ValueError('Connection failed')
 
     parts_response = utils.query_sparql(parts_query)
-    parts = utils.create_parts(parts_response)	
-    add_pagerank(parts, uri2rank)
-    add_keywords(parts)
+    add_pagerank(parts_response, uri2rank)
+    add_keywords(parts_response)
     create_parts_index(es, index_name)
-    index_parts(parts, es, index_name)
+    index_parts(parts_response, es, index_name)
 
-    print('Number of parts: ' + str(len(parts)))
+    print('Number of parts: ' + str(len(parts_response)))
 

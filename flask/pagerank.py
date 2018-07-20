@@ -93,43 +93,17 @@ class graph:
 # add uris as keys to adjacency_list
 def populate_uris(uri_response):
     adjacency_list = {}
-    
-    ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
-    
-    root = ElementTree.fromstring(uri_response)
-    results = root.find('sparql_results:results', ns)
 
-    for result in results.findall('sparql_results:result', ns):
-        bindings = result.findall('sparql_results:binding', ns)
-
-        for binding in bindings:
-            if binding.attrib['name'] == 'subject':
-                subject = binding.find('sparql_results:uri', ns).text
-
-        adjacency_list[subject] = []
+    for uri in uri_response:
+        adjacency_list[uri['subject']] = []
     
     return adjacency_list
 
 
 # add edges
 def populate_links(link_response, adjacency_list):
-    ns = {'sparql_results': 'http://www.w3.org/2005/sparql-results#'}
-    
-    root = ElementTree.fromstring(link_response)
-    results = root.find('sparql_results:results', ns)
-
-    for result in results.findall('sparql_results:result', ns):
-        bindings = result.findall('sparql_results:binding', ns)
-
-        for binding in bindings:
-            if binding.attrib['name'] == 'parent':
-                parent = binding.find('sparql_results:uri', ns).text
-
-        for binding in bindings:
-            if binding.attrib['name'] == 'child':
-                child = binding.find('sparql_results:uri', ns).text
-
-        adjacency_list[parent].append(child)
+    for link in link_response:
+        adjacency_list[link['parent']].append(link['child'])
 
 
 def pagerank(g, s=0.85, tolerance=0.001):
