@@ -75,7 +75,10 @@ def update_index(uri2rank):
     if not es.ping():
         raise ValueError('Connection failed')
 
+    print('Query for parts')
     parts_response = utils.query_sparql(parts_query)
+    print('Query for parts complete')
+
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
     create_parts_index(es, index_name)

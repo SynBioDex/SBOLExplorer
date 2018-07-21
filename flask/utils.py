@@ -35,7 +35,27 @@ def memoized_query_sparql(query):
 
 
 def query_sparql(query):
-    url = get_config()['sparql_endpoint'] + urllib.parse.urlencode({'query': query_prefix + query})
+    offset = 0
+    limit = 10000
+
+    results = []
+
+    while True:
+        full_query = query_prefix + query + 'OFFSET ' + str(offset) + ' LIMIT ' + str(limit)
+        new_results = send_query(full_query)
+        results.extend(new_results)
+        print(str(len(results)) + ' ', end='', flush=True)
+
+        if len(new_results) != limit:
+            break
+
+        offset += limit
+
+    return results
+
+
+def send_query(query):
+    url = get_config()['sparql_endpoint'] + urllib.parse.urlencode({'query': query})
     headers = {'Accept': 'application/json'}
     r = requests.get(url, headers=headers)
 
