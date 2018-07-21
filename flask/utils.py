@@ -35,7 +35,7 @@ def memoized_query_sparql(query):
 
 
 def query_sparql(query):
-    url = get_config()['synbiohub_sparql_endpoint'] + urllib.parse.urlencode({'query': query_prefix + query})
+    url = get_config()['sparql_endpoint'] + urllib.parse.urlencode({'query': query_prefix + query})
     headers = {'Accept': 'application/json'}
     r = requests.get(url, headers=headers)
 

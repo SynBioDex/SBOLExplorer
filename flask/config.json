@@ -1,5 +1,5 @@
 {
-    "synbiohub_sparql_endpoint": "http://localhost:7777/sparql?",
+    "sparql_endpoint": "http://localhost:8890/sparql?",
     "elasticsearch_endpoint": "http://localhost:9200/",
     "elasticsearch_index_name": "part",
     "pagerank_tolerance": "0.0001",
