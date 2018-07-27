@@ -95,7 +95,7 @@ def populate_uris(uri_response):
     adjacency_list = {}
 
     for uri in uri_response:
-        adjacency_list[uri['subject']] = []
+        adjacency_list[uri['subject']] = set()
     
     return adjacency_list
 
@@ -103,7 +103,7 @@ def populate_uris(uri_response):
 # add edges
 def populate_links(link_response, adjacency_list):
     for link in link_response:
-        adjacency_list[link['parent']].append(link['child'])
+        adjacency_list[link['parent']].add(link['child'])
 
 
 def pagerank(g, s=0.85, tolerance=0.001):

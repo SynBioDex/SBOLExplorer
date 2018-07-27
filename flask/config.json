@@ -3,5 +3,6 @@
     "elasticsearch_endpoint": "http://localhost:9200/",
     "elasticsearch_index_name": "part",
     "pagerank_tolerance": "0.0001",
-    "uclust_identity": "0.8"
+    "uclust_identity": "0.8",
+    "distributed_search": false
 }
