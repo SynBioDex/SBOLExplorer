@@ -42,20 +42,13 @@ def search_es(es_query):
 
 
 def extract_query(sparql_query):
-    _from = ['https://synbiohub.org/public']
+    _from = ''
     if is_count_query(sparql_query):
         _from_search = re.search(r'''SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {''', sparql_query)
     else:
         _from_search = re.search(r'''\?type\n(.*)\s*WHERE {''', sparql_query)
     if _from_search:
-        _from_line = _from_search.group(1)
-        if _from_line != '':
-            _from = []
-            for graph in _from_line.split('FROM'):
-                graph = graph.strip()
-                graph = graph[1:len(graph) - 1]
-                if graph != '':
-                    _from.append(graph)
+        _from = _from_search.group(1)
 
     criteria = ''
     criteria_search = re.search(r'''WHERE {\s*(.*)\s*\?subject a \?type \.''', sparql_query)
@@ -79,6 +72,22 @@ def extract_query(sparql_query):
     es_query = ' '.join(keywords)
 
     return es_query, _from, criteria, offset, limit
+
+
+def extract_allowed_graphs(_from):
+    if _from == '':
+        return ['https://synbiohub.org/public']
+
+    allowed_graphs = []
+
+    for graph in _from.split('FROM'):
+        graph = graph.strip()
+        graph = graph[1:len(graph) - 1]
+
+        if graph != '':
+            allowed_graphs.append(graph)
+
+    return allowed_graphs
 
 
 def is_count_query(sparql_query):
@@ -148,7 +157,7 @@ def create_binding(subject, displayId, version, name, description, _type, order_
     return binding
 
 
-def create_bindings(es_response, clusters, _from, allowed_subjects = None):
+def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = None):
     bindings = []
 
     cluster_duplicates = set()
@@ -161,7 +170,7 @@ def create_bindings(es_response, clusters, _from, allowed_subjects = None):
         if allowed_subjects is not None and subject not in allowed_subjects:
             continue
 
-        if _source.get('graph') not in _from:
+        if _source.get('graph') not in allowed_graphs:
             continue
         
         if subject in cluster_duplicates:
@@ -195,6 +204,9 @@ def create_criteria_bindings(criteria_response, uri2rank):
             pagerank = 1
         else:
             pagerank = uri2rank[subject]
+
+        if part.get('type') == 'http://sbols.org/v2#Sequence':
+            pagerank = pagerank / 10.0
 
         binding = create_binding(part.get('subject'),
                 part.get('displayId'),
@@ -260,22 +272,27 @@ def search(sparql_query, uri2rank, clusters):
         similar_criteria = create_similar_criteria(criteria, clusters)
         criteria_response = query_criteria(_from, similar_criteria) 
         bindings = create_criteria_bindings(criteria_response, uri2rank)
+
     elif 'USES' in criteria or 'TWINS' in criteria or es_query == '' or es_query.isspace():
         # USES or TWINS or pure advanced search
         criteria_response = query_criteria(_from, criteria)
         bindings = create_criteria_bindings(criteria_response, uri2rank)
+
     else:
         es_response = search_es(es_query)
+        allowed_graphs = extract_allowed_graphs(_from)
 
         filterless_criteria = re.sub('FILTER .*', '', criteria)
+
         if filterless_criteria == '' or filterless_criteria.isspace():
             # pure string search
-            bindings = create_bindings(es_response, clusters, _from)
+            bindings = create_bindings(es_response, clusters, allowed_graphs)
+
         else:
             # advanced search and string search
             criteria_response = query_criteria(_from, filterless_criteria)
             allowed_subjects = get_allowed_subjects(criteria_response)
-            bindings = create_bindings(es_response, clusters, _from, allowed_subjects)
+            bindings = create_bindings(es_response, clusters, allowed_graphs, allowed_subjects)
 
     bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
 
