@@ -42,13 +42,20 @@ def search_es(es_query):
 
 
 def extract_query(sparql_query):
-    _from = ''
+    _from = ['https://synbiohub.org/public']
     if is_count_query(sparql_query):
         _from_search = re.search(r'''SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {''', sparql_query)
     else:
         _from_search = re.search(r'''\?type\n(.*)\s*WHERE {''', sparql_query)
     if _from_search:
-        _from = _from_search.group(1)
+        _from_line = _from_search.group(1)
+        if _from_line != '':
+            _from = []
+            for graph in _from_line.split('FROM'):
+                graph = graph.strip()
+                graph = graph[1:len(graph) - 1]
+                if graph != '':
+                    _from.append(graph)
 
     criteria = ''
     criteria_search = re.search(r'''WHERE {\s*(.*)\s*\?subject a \?type \.''', sparql_query)
@@ -141,7 +148,7 @@ def create_binding(subject, displayId, version, name, description, _type, order_
     return binding
 
 
-def create_bindings(es_response, clusters, allowed_subjects = None):
+def create_bindings(es_response, clusters, _from, allowed_subjects = None):
     bindings = []
 
     cluster_duplicates = set()
@@ -152,6 +159,9 @@ def create_bindings(es_response, clusters, allowed_subjects = None):
         subject = _source['subject']
 
         if allowed_subjects is not None and subject not in allowed_subjects:
+            continue
+
+        if _source.get('graph') not in _from:
             continue
         
         if subject in cluster_duplicates:
@@ -260,12 +270,12 @@ def search(sparql_query, uri2rank, clusters):
         filterless_criteria = re.sub('FILTER .*', '', criteria)
         if filterless_criteria == '' or filterless_criteria.isspace():
             # pure string search
-            bindings = create_bindings(es_response, clusters)
+            bindings = create_bindings(es_response, clusters, _from)
         else:
             # advanced search and string search
             criteria_response = query_criteria(_from, filterless_criteria)
             allowed_subjects = get_allowed_subjects(criteria_response)
-            bindings = create_bindings(es_response, clusters, allowed_subjects)
+            bindings = create_bindings(es_response, clusters, _from, allowed_subjects)
 
     bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
 

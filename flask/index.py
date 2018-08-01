@@ -12,9 +12,11 @@ SELECT DISTINCT
     ?name
     ?description
     ?type
+    ?graph
 WHERE {
     ?subject a ?type .
-    ?subject sbh:topLevel ?subject
+    ?subject sbh:topLevel ?subject .
+    GRAPH ?graph { ?subject ?a ?t } .
     OPTIONAL { ?subject sbol2:displayId ?displayId . }
     OPTIONAL { ?subject sbol2:version ?version . }
     OPTIONAL { ?subject dcterms:title ?name . }
