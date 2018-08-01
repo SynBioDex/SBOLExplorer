@@ -43,7 +43,7 @@ def update():
     index.update_index(uri2rank)
     
     utils.memoized_query_sparql.cache_clear()
-    print('cache cleared')
+    print('Cache cleared')
 
     success_message = 'Successfully updated!'
     print(success_message)
