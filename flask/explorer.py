@@ -17,24 +17,6 @@ log.setLevel(logging.ERROR)
 app = Flask(__name__)
 
 
-clusters = None
-clusters_filename = 'dumps/clusters_dump'
-
-uri2rank = None
-uri2rank_filename = 'dumps/uri2rank_dump'
-
-
-def read_state():
-    global clusters
-    global uri2rank
-
-    if clusters is None:
-        clusters = utils.deserialize(clusters_filename)
-
-    if uri2rank is None:
-        uri2rank = utils.deserialize(uri2rank_filename)
-
-
 @app.route('/info')
 def info():
     return 'Explorer up!!! Virtutoso ' + str(utils.memoized_query_sparql.cache_info())
@@ -42,27 +24,23 @@ def info():
 
 @app.route('/update')
 def update():
-    global clusters
-    global uri2rank
-    read_state()
-
     subject = request.args.get('subject')
 
     if subject is None:
         clusters = cluster.update_clusters()
-        utils.serialize(clusters, clusters_filename)
+        utils.save_clusters(clusters)
 
         uri2rank = pagerank.update_pagerank()
-        utils.serialize(uri2rank, uri2rank_filename)
+        utils.save_uri2rank(uri2rank)
 
-        index.update_index(uri2rank)
+        index.update_index(utils.get_uri2rank())
         
         utils.memoized_query_sparql.cache_clear()
         print('Cache cleared')
 
         success_message = 'Successfully updated entire index!'
     else:
-        index.incrementally_update_index(subject, uri2rank)
+        index.incrementally_update_index(subject, utils.get_uri2rank())
         success_message = 'Successfully updated ' + subject + '!'
 
     print(success_message)
@@ -71,10 +49,6 @@ def update():
 
 @app.route('/')
 def sparql_search_endpoint():
-    global clusters
-    global uri2rank
-    read_state()
-
     sparql_query = request.args.get('query')
-    return jsonify(search.search(sparql_query, uri2rank, clusters))
+    return jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters()))
 
