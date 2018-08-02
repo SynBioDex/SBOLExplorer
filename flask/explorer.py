@@ -48,7 +48,9 @@ def update():
         utils.memoized_query_sparql.cache_clear()
         print('Cache cleared')
     else:
-        index.incrementally_update_index(subject)
+        if uri2rank is None:
+            uri2rank = utils.deserialize(uri2rank_filename)
+        index.incrementally_update_index(subject, uri2rank)
 
     success_message = 'Successfully updated!'
     print(success_message)

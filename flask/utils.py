@@ -43,6 +43,32 @@ PREFIX ncbi: <http://www.ncbi.nlm.nih.gov#>
 '''
 
 
+def query_parts(_from = '', criteria = ''):
+    query = '''
+    SELECT DISTINCT
+        ?subject
+        ?displayId
+        ?version
+        ?name
+        ?description
+        ?type
+        ?graph
+    ''' + _from + '''
+    WHERE {
+    ''' + criteria + '''
+        ?subject a ?type .
+        ?subject sbh:topLevel ?subject .
+        GRAPH ?graph { ?subject ?a ?t } .
+        OPTIONAL { ?subject sbol2:displayId ?displayId . }
+        OPTIONAL { ?subject sbol2:version ?version . }
+        OPTIONAL { ?subject dcterms:title ?name . }
+        OPTIONAL { ?subject dcterms:description ?description . }
+    } 
+    '''
+
+    return memoized_query_sparql(query)
+
+
 @lru_cache(maxsize=32)
 def memoized_query_sparql(query):
     return query_sparql(query)

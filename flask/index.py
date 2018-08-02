@@ -1,31 +1,15 @@
-from elasticsearch import ElasticsearchException
 from elasticsearch import helpers
 import utils
 
 
-parts_query = '''
-SELECT DISTINCT
-    ?subject
-    ?displayId
-    ?version
-    ?name
-    ?description
-    ?type
-    ?graph
-WHERE {
-    ?subject a ?type .
-    ?subject sbh:topLevel ?subject .
-    GRAPH ?graph { ?subject ?a ?t } .
-    OPTIONAL { ?subject sbol2:displayId ?displayId . }
-    OPTIONAL { ?subject sbol2:version ?version . }
-    OPTIONAL { ?subject dcterms:title ?name . }
-    OPTIONAL { ?subject dcterms:description ?description . }
-} 
-'''
-
 def add_pagerank(parts_response, uri2rank):
     for part in parts_response:
-        part['pagerank'] = uri2rank[part['subject']]
+        subject = part['subject']
+
+        if subject in uri2rank:
+            part['pagerank'] = uri2rank[subject]
+        else:
+            part['pagerank'] = 1
 
 
 def add_keywords(parts_response):
@@ -40,13 +24,23 @@ def add_keywords(parts_response):
 
 
 def create_parts_index(index_name):
-    try:
-        utils.get_es.indices.create(index=index_name)
-    except ElasticsearchException as error:
-        print('Index already exists: ' + str(error))
-        utils.get_es.indices.delete(index=index_name)
-        utils.get_es.indices.create(index=index_name)
-        print('Index deleted and recreated')
+    if utils.get_es().indices.exists(index_name):
+        print('Index already exists -> deleting')
+        utils.get_es().indices.delete(index=index_name)
+
+    mapping = {
+        'mappings': {
+            index_name: {
+                'properties': {
+                    'subject': {
+                        'type': 'keyword'
+                    }
+                }
+            }
+        }
+    }
+    utils.get_es().indices.create(index=index_name, body=mapping)
+    print('Index created')
 
 
 def index_parts(parts_response, index_name):
@@ -73,7 +67,7 @@ def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
     print('Query for parts')
-    parts_response = utils.query_sparql(parts_query)
+    parts_response = utils.query_parts()
     print('Query for parts complete')
 
     add_pagerank(parts_response, uri2rank)
@@ -84,7 +78,23 @@ def update_index(uri2rank):
     print('Number of parts: ' + str(len(parts_response)))
 
 
-def incrementally_update_index(subject):
-    # TODO implement delete and then index of subject
-    pass
+def incrementally_update_index(subject, uri2rank):
+    index_name = utils.get_config()['elasticsearch_index_name']
+
+    body = {
+        'query': {
+            'term': { 'subject': subject }
+        },
+        'conflicts': 'proceed'
+    }
+    utils.get_es().delete_by_query(index=index_name, doc_type=index_name, body=body)
+
+    part_response = utils.query_parts('', 'FILTER (?subject = <' + subject + '>)')
+
+    if len(part_response) == 1:
+        print(part_response)
+        add_pagerank(part_response, uri2rank)
+        add_keywords(part_response)
+
+        utils.get_es().index(index=index_name, doc_type=index_name, body=part_response[0])
     
