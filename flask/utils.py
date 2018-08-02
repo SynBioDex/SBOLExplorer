@@ -2,6 +2,7 @@ import requests
 import urllib.parse
 from xml.etree import ElementTree
 from functools import lru_cache
+from elasticsearch import Elasticsearch
 import pickle
 import json
 
@@ -11,6 +12,19 @@ def get_config():
         config = json.load(f)
 
     return config
+
+
+es = None
+
+def get_es():
+    global es
+
+    if not es:
+        es = Elasticsearch([get_config()['elasticsearch_endpoint']], verify_certs=True)
+        if not es.ping():
+            raise ValueError('Connection failed')
+
+    return es
 
 
 query_prefix = '''

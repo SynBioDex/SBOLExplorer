@@ -1,11 +1,7 @@
-from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search
 from xml.etree import ElementTree
 import re
 import utils
-
-
-es = Elasticsearch([utils.get_config()['elasticsearch_endpoint']], verify_certs=True)
 
 
 def search_es(es_query):
@@ -38,7 +34,7 @@ def search_es(es_query):
         'from': 0,
         'size': 10000
     }
-    return es.search(index='part', body=body)
+    return utils.get_es().search(index='part', body=body)
 
 
 def extract_query(sparql_query):

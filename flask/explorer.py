@@ -34,16 +34,21 @@ def update():
     global clusters
     global uri2rank
 
-    clusters = cluster.update_clusters()
-    utils.serialize(clusters, clusters_filename)
+    subject = request.args.get('subject')
 
-    uri2rank = pagerank.update_pagerank()
-    utils.serialize(uri2rank, uri2rank_filename)
+    if subject is None:
+        clusters = cluster.update_clusters()
+        utils.serialize(clusters, clusters_filename)
 
-    index.update_index(uri2rank)
-    
-    utils.memoized_query_sparql.cache_clear()
-    print('Cache cleared')
+        uri2rank = pagerank.update_pagerank()
+        utils.serialize(uri2rank, uri2rank_filename)
+
+        index.update_index(uri2rank)
+        
+        utils.memoized_query_sparql.cache_clear()
+        print('Cache cleared')
+    else:
+        index.incrementally_update_index(subject)
 
     success_message = 'Successfully updated!'
     print(success_message)

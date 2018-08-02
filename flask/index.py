@@ -1,4 +1,3 @@
-from elasticsearch import Elasticsearch
 from elasticsearch import ElasticsearchException
 from elasticsearch import helpers
 import utils
@@ -40,17 +39,17 @@ def add_keywords(parts_response):
         part['keywords'] = ' '.join(keywords)
 
 
-def create_parts_index(es, index_name):
+def create_parts_index(index_name):
     try:
-        es.indices.create(index=index_name)
+        utils.get_es.indices.create(index=index_name)
     except ElasticsearchException as error:
         print('Index already exists: ' + str(error))
-        es.indices.delete(index=index_name)
-        es.indices.create(index=index_name)
+        utils.get_es.indices.delete(index=index_name)
+        utils.get_es.indices.create(index=index_name)
         print('Index deleted and recreated')
 
 
-def index_parts(parts_response, es, index_name):
+def index_parts(parts_response, index_name):
     actions = []
     for i in range(len(parts_response)):
         action = {
@@ -63,7 +62,7 @@ def index_parts(parts_response, es, index_name):
         actions.append(action)
 
     print('Bulk indexing')
-    stats = helpers.bulk(es, actions)
+    stats = helpers.bulk(utils.get_es(), actions)
     if len(stats[1]) == 0:
         print('Bulk indexing complete')
     else:
@@ -73,18 +72,19 @@ def index_parts(parts_response, es, index_name):
 def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
-    es = Elasticsearch([utils.get_config()['elasticsearch_endpoint']], verify_certs=True)
-    if not es.ping():
-        raise ValueError('Connection failed')
-
     print('Query for parts')
     parts_response = utils.query_sparql(parts_query)
     print('Query for parts complete')
 
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
-    create_parts_index(es, index_name)
-    index_parts(parts_response, es, index_name)
+    create_parts_index(index_name)
+    index_parts(parts_response, index_name)
 
     print('Number of parts: ' + str(len(parts_response)))
 
+
+def incrementally_update_index(subject):
+    # TODO implement delete and then index of subject
+    pass
+    
