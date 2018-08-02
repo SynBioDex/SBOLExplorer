@@ -109,21 +109,6 @@ def memoized_query_sparql(query):
 
 
 def query_sparql(query):
-    query_prefix = '''
-    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-    PREFIX dcterms: <http://purl.org/dc/terms/>
-    PREFIX dc: <http://purl.org/dc/elements/1.1/>
-    PREFIX sbh: <http://wiki.synbiohub.org/wiki/Terms/synbiohub#>
-    PREFIX synbiohub: <http://synbiohub.org#>
-    PREFIX igem: <http://wiki.synbiohub.org/wiki/Terms/igem#>
-    PREFIX prov: <http://www.w3.org/ns/prov#>
-    PREFIX sbol2: <http://sbols.org/v2#>
-    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    PREFIX purl: <http://purl.obolibrary.org/obo/>
-    PREFIX ncbi: <http://www.ncbi.nlm.nih.gov#>
-    '''
-
     endpoints = [get_config()['sparql_endpoint']]
 
     if get_config()['distributed_search']:
@@ -134,7 +119,7 @@ def query_sparql(query):
     results = []
 
     for endpoint in endpoints:
-        results.extend(page_query(query_prefix + query, endpoint))
+        results.extend(page_query(query, endpoint))
 
     return deduplicate_results(results)
 
@@ -151,13 +136,28 @@ def deduplicate_results(results):
 def page_query(query, endpoint):
     print('endpoint: ' + endpoint)
 
+    query_prefix = '''
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX dcterms: <http://purl.org/dc/terms/>
+    PREFIX dc: <http://purl.org/dc/elements/1.1/>
+    PREFIX sbh: <http://wiki.synbiohub.org/wiki/Terms/synbiohub#>
+    PREFIX synbiohub: <http://synbiohub.org#>
+    PREFIX igem: <http://wiki.synbiohub.org/wiki/Terms/igem#>
+    PREFIX prov: <http://www.w3.org/ns/prov#>
+    PREFIX sbol2: <http://sbols.org/v2#>
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX purl: <http://purl.obolibrary.org/obo/>
+    PREFIX ncbi: <http://www.ncbi.nlm.nih.gov#>
+    '''
+
     offset = 0
     limit = 10000
 
     results = []
 
     while True:
-        full_query = query + 'OFFSET ' + str(offset) + ' LIMIT ' + str(limit)
+        full_query = query_prefix + query + 'OFFSET ' + str(offset) + ' LIMIT ' + str(limit)
         new_results = send_query(full_query, endpoint)
         results.extend(new_results)
         print(str(len(results)) + ' ', end='', flush=True)
