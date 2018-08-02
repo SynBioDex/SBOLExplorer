@@ -92,7 +92,6 @@ def incrementally_update_index(subject, uri2rank):
     part_response = utils.query_parts('', 'FILTER (?subject = <' + subject + '>)')
 
     if len(part_response) == 1:
-        print(part_response)
         add_pagerank(part_response, uri2rank)
         add_keywords(part_response)
 

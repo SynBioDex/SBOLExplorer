@@ -24,6 +24,17 @@ uri2rank = None
 uri2rank_filename = 'dumps/uri2rank_dump'
 
 
+def read_state():
+    global clusters
+    global uri2rank
+
+    if clusters is None:
+        clusters = utils.deserialize(clusters_filename)
+
+    if uri2rank is None:
+        uri2rank = utils.deserialize(uri2rank_filename)
+
+
 @app.route('/info')
 def info():
     return 'Explorer up!!! Virtutoso ' + str(utils.memoized_query_sparql.cache_info())
@@ -33,6 +44,7 @@ def info():
 def update():
     global clusters
     global uri2rank
+    read_state()
 
     subject = request.args.get('subject')
 
@@ -47,12 +59,12 @@ def update():
         
         utils.memoized_query_sparql.cache_clear()
         print('Cache cleared')
-    else:
-        if uri2rank is None:
-            uri2rank = utils.deserialize(uri2rank_filename)
-        index.incrementally_update_index(subject, uri2rank)
 
-    success_message = 'Successfully updated!'
+        success_message = 'Successfully updated entire index!'
+    else:
+        index.incrementally_update_index(subject, uri2rank)
+        success_message = 'Successfully updated ' + subject + '!'
+
     print(success_message)
     return success_message
 
@@ -61,12 +73,7 @@ def update():
 def sparql_search_endpoint():
     global clusters
     global uri2rank
-
-    if clusters is None:
-        clusters = utils.deserialize(clusters_filename)
-
-    if uri2rank is None:
-        uri2rank = utils.deserialize(uri2rank_filename)
+    read_state()
 
     sparql_query = request.args.get('query')
     return jsonify(search.search(sparql_query, uri2rank, clusters))
