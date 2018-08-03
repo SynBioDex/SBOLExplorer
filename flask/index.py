@@ -1,5 +1,6 @@
 from elasticsearch import helpers
 import utils
+import query
 
 
 def add_pagerank(parts_response, uri2rank):
@@ -67,7 +68,7 @@ def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
     print('Query for parts')
-    parts_response = utils.query_parts()
+    parts_response = query.query_parts()
     print('Query for parts complete')
 
     add_pagerank(parts_response, uri2rank)
@@ -89,7 +90,7 @@ def incrementally_update_index(subject, uri2rank):
     }
     utils.get_es().delete_by_query(index=index_name, doc_type=index_name, body=body)
 
-    part_response = utils.query_parts('', 'FILTER (?subject = <' + subject + '>)')
+    part_response = query.query_parts('', 'FILTER (?subject = <' + subject + '>)')
 
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)

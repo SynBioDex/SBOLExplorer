@@ -2,6 +2,7 @@ from elasticsearch_dsl import Search
 from xml.etree import ElementTree
 import re
 import utils
+import query
 
 
 def search_es(es_query):
@@ -241,12 +242,12 @@ def search(sparql_query, uri2rank, clusters):
     if 'SIMILAR' in criteria:
         # SIMILAR
         similar_criteria = create_similar_criteria(criteria, clusters)
-        criteria_response = utils.query_parts(_from, similar_criteria) 
+        criteria_response = query.query_parts(_from, similar_criteria) 
         bindings = create_criteria_bindings(criteria_response, uri2rank)
 
     elif 'USES' in criteria or 'TWINS' in criteria or es_query == '' or es_query.isspace():
         # USES or TWINS or pure advanced search
-        criteria_response = utils.query_parts(_from, criteria)
+        criteria_response = query.query_parts(_from, criteria)
         bindings = create_criteria_bindings(criteria_response, uri2rank)
 
     else:
@@ -261,7 +262,7 @@ def search(sparql_query, uri2rank, clusters):
 
         else:
             # advanced search and string search
-            criteria_response = utils.query_parts(_from, filterless_criteria)
+            criteria_response = query.query_parts(_from, filterless_criteria)
             allowed_subjects = get_allowed_subjects(criteria_response)
             bindings = create_bindings(es_response, clusters, allowed_graphs, allowed_subjects)
 

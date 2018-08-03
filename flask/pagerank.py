@@ -1,6 +1,7 @@
 from xml.etree import ElementTree
 import numpy as np
 import utils
+import query
 
 
 link_query = '''
@@ -145,12 +146,12 @@ def make_uri2rank(pr_vector, uri2index):
 
 def update_pagerank():
     print('Query for uris')
-    uri_response = utils.query_sparql(uri_query)
+    uri_response = query.query_sparql(uri_query)
     print('Query for uris complete')
     adjacency_list = populate_uris(uri_response)
 
     print('Query for links')
-    link_response = utils.query_sparql(link_query)
+    link_response = query.query_sparql(link_query)
     print('Query for links complete')
     populate_links(link_response, adjacency_list)
 

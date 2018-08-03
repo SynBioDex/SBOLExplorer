@@ -9,6 +9,7 @@ import pagerank
 import index
 import search
 import utils
+import query
 
 
 log = logging.getLogger('werkzeug')
@@ -19,7 +20,7 @@ app = Flask(__name__)
 
 @app.route('/info')
 def info():
-    return 'Explorer up!!! Virtutoso ' + str(utils.memoized_query_sparql.cache_info())
+    return 'Explorer up!!! Virtutoso ' + str(query.memoized_query_sparql.cache_info())
 
 
 @app.route('/update')
@@ -35,7 +36,7 @@ def update():
 
         index.update_index(utils.get_uri2rank())
         
-        utils.memoized_query_sparql.cache_clear()
+        query.memoized_query_sparql.cache_clear()
         print('Cache cleared')
 
         success_message = 'Successfully updated entire index!'

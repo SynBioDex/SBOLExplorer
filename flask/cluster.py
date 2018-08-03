@@ -1,6 +1,7 @@
 from xml.etree import ElementTree
 import subprocess
 import utils
+import query
 
 
 uclust_identity = utils.get_config()['uclust_identity'] # how similar sequences in the same cluster must be
@@ -96,7 +97,7 @@ def uclust2clusters():
 
 def update_clusters():
     print('Query for sequences')
-    sequences_response = utils.query_sparql(sequence_query)
+    sequences_response = query.query_sparql(sequence_query)
     print('Query for sequences complete')
     write_fasta(sequences_response)
 
