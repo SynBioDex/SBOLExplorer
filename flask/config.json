@@ -1,8 +1,1 @@
-{
-    "sparql_endpoint": "http://localhost:8890/sparql?",
-    "elasticsearch_endpoint": "http://localhost:9200/",
-    "elasticsearch_index_name": "part",
-    "pagerank_tolerance": "0.0001",
-    "uclust_identity": "0.8",
-    "distributed_search": false
-}
+{"distributed_search": false, "elasticsearch_index_name": "part", "uclust_identity": "0.8", "sparql_endpoint": "http://localhost:8890/sparql?", "pagerank_tolerance": "0.0001", "elasticsearch_endpoint": "http://localhost:9200/"}

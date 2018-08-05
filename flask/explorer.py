@@ -23,6 +23,16 @@ def info():
     return 'Explorer up!!! Virtutoso ' + str(query.memoized_query_sparql.cache_info())
 
 
+@app.route('/config', methods=['POST', 'GET'])
+def config():
+    if request.method == 'POST':
+        new_config = request.get_json()
+        utils.set_config(new_config)
+
+    config = utils.get_config()
+    return jsonify(config)
+
+
 @app.route('/update')
 def update():
     subject = request.args.get('subject')

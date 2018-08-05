@@ -3,11 +3,29 @@ import json
 import pickle
 
 
+config = None
+
 def get_config():
-    with open('config.json') as f:
-        config = json.load(f)
+    global config
+
+    if not config:
+        with open('config.json') as f:
+            config = json.load(f)
 
     return config
+
+
+def set_config(new_config):
+    global config
+
+    config = get_config()
+
+    for key in new_config:
+        if key in config:
+            config[key] = new_config[key]
+
+    with open('config.json', 'w') as f:
+        json.dump(config, f)
 
 
 es = None
@@ -28,7 +46,6 @@ clusters_filename = 'dumps/clusters_dump'
 
 uri2rank = None
 uri2rank_filename = 'dumps/uri2rank_dump'
-
 
 def save_clusters(new_clusters):
     global clusters
