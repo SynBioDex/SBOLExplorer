@@ -35,7 +35,27 @@ def search_es(es_query):
         'from': 0,
         'size': 10000
     }
-    return utils.get_es().search(index='part', body=body)
+    return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+
+
+def empty_search_es(offset, limit):
+    body = {
+        'query': {
+            'function_score': {
+                'query': {
+                    'match_all': {}
+                },
+                'script_score': {
+                    'script': {
+                        'source': "_score * Math.log(doc['pagerank'].value + 1)" # Math.log is a natural log
+                    }
+                }
+            }
+        },
+        'from': offset,
+        'size': limit
+    }
+    return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
 
 
 def extract_query(sparql_query):
@@ -45,12 +65,12 @@ def extract_query(sparql_query):
     else:
         _from_search = re.search(r'''\?type\n(.*)\s*WHERE {''', sparql_query)
     if _from_search:
-        _from = _from_search.group(1)
+        _from = _from_search.group(1).strip()
 
     criteria = ''
     criteria_search = re.search(r'''WHERE {\s*(.*)\s*\?subject a \?type \.''', sparql_query)
     if criteria_search:
-        criteria = criteria_search.group(1)
+        criteria = criteria_search.group(1).strip()
 
     offset = 0
     offset_search = re.search(r'''OFFSET (\d*)''', sparql_query)
@@ -66,7 +86,7 @@ def extract_query(sparql_query):
     keywords = []
     for keyword in re.findall(extract_keyword_re, criteria):
         keywords.append(keyword)
-    es_query = ' '.join(keywords)
+    es_query = ' '.join(keywords).strip()
 
     return es_query, _from, criteria, offset, limit
 
@@ -91,16 +111,15 @@ def is_count_query(sparql_query):
     return 'SELECT (count(distinct' in sparql_query
 
 
-def create_count_response(count):
-    count_response = {"head":{"link":[],"vars":["count"]},"results":{"distinct":False,"ordered":True,"bindings":[{"count":{"type":"typed-literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"10"}}]}}
-    count_response['results']['bindings'][0]['count']['value'] = str(count)
-    return count_response
+def create_response(sparql_query, count, bindings):
+    if is_count_query(sparql_query):
+        response = {"head":{"link":[],"vars":["count"]},"results":{"distinct":False,"ordered":True,"bindings":[{"count":{"type":"typed-literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"10"}}]}}
+        response['results']['bindings'][0]['count']['value'] = str(count)
+    else:
+        response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
+        response['results']['bindings'] = bindings
 
-
-def create_results_response(bindings):
-    results_response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
-    results_response['results']['bindings'] = bindings
-    return results_response
+    return response
 
 
 def create_binding(subject, displayId, version, name, description, _type, order_by):
@@ -239,24 +258,30 @@ def create_similar_criteria(criteria, clusters):
 def search(sparql_query, uri2rank, clusters):
     es_query, _from, criteria, offset, limit = extract_query(sparql_query)
 
+    filterless_criteria = re.sub('FILTER .*', '', criteria).strip()
+    allowed_graphs = extract_allowed_graphs(_from)
+
     if 'SIMILAR' in criteria:
         # SIMILAR
         similar_criteria = create_similar_criteria(criteria, clusters)
         criteria_response = query.query_parts(_from, similar_criteria) 
         bindings = create_criteria_bindings(criteria_response, uri2rank)
 
-    elif 'USES' in criteria or 'TWINS' in criteria or es_query == '' or es_query.isspace():
+    elif 'USES' in criteria or 'TWINS' in criteria or (es_query == '' and filterless_criteria != ''):
         # USES or TWINS or pure advanced search
         criteria_response = query.query_parts(_from, criteria)
         bindings = create_criteria_bindings(criteria_response, uri2rank)
 
+    elif es_query == '' and filterless_criteria == '':
+        # empty search
+        es_response = empty_search_es(offset, limit)
+        bindings = create_bindings(es_response, clusters, allowed_graphs)
+        return create_response(sparql_query, es_response['hits']['total'], bindings)
+
     else:
         es_response = search_es(es_query)
-        allowed_graphs = extract_allowed_graphs(_from)
 
-        filterless_criteria = re.sub('FILTER .*', '', criteria)
-
-        if filterless_criteria == '' or filterless_criteria.isspace():
+        if filterless_criteria == '':
             # pure string search
             bindings = create_bindings(es_response, clusters, allowed_graphs)
 
@@ -268,9 +293,5 @@ def search(sparql_query, uri2rank, clusters):
 
     bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
 
-    if is_count_query(sparql_query):
-        return create_count_response(len(bindings))
-    else:
-        bindings = bindings[offset:offset + limit]
-        return create_results_response(bindings)
+    return create_response(sparql_query, len(bindings), bindings[offset:offset + limit])
 
