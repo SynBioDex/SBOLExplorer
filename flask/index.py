@@ -35,6 +35,9 @@ def create_parts_index(index_name):
                 'properties': {
                     'subject': {
                         'type': 'keyword'
+                    },
+                    'graph': {
+                        'type': 'keyword'
                     }
                 }
             }

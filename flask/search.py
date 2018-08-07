@@ -38,13 +38,16 @@ def search_es(es_query):
     return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
 
 
-def empty_search_es(offset, limit):
+def empty_search_es(offset, limit, allowed_graphs):
+    if len(allowed_graphs) == 1:
+        query = { 'term': { 'graph': allowed_graphs[0] } }
+    else:
+        query = { 'terms': { 'graph': allowed_graphs } }
+
     body = {
         'query': {
             'function_score': {
-                'query': {
-                    'match_all': {}
-                },
+                'query': query,
                 'script_score': {
                     'script': {
                         'source': "_score * Math.log(doc['pagerank'].value + 1)" # Math.log is a natural log
@@ -93,7 +96,7 @@ def extract_query(sparql_query):
 
 def extract_allowed_graphs(_from):
     if _from == '':
-        return ['https://synbiohub.org/public']
+        return [utils.get_config()['synbiohub_public_graph']]
 
     allowed_graphs = []
 
@@ -274,7 +277,7 @@ def search(sparql_query, uri2rank, clusters):
 
     elif es_query == '' and filterless_criteria == '':
         # empty search
-        es_response = empty_search_es(offset, limit)
+        es_response = empty_search_es(offset, limit, allowed_graphs)
         bindings = create_bindings(es_response, clusters, allowed_graphs)
         return create_response(sparql_query, es_response['hits']['total'], bindings)
 
