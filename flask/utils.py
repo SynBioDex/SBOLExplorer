@@ -28,15 +28,11 @@ def set_config(new_config):
         json.dump(config, f)
 
 
-es = None
-
 def get_es():
-    global es
+    es = Elasticsearch([get_config()['elasticsearch_endpoint']], verify_certs=True)
 
-    if not es:
-        es = Elasticsearch([get_config()['elasticsearch_endpoint']], verify_certs=True)
-        if not es.ping():
-            raise ValueError('Connection failed')
+    if not es.ping():
+        raise ValueError('Connection failed')
 
     return es
 
