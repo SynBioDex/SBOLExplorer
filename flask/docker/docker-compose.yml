@@ -1,6 +1,6 @@
 version: "3"
 services:
-  explorer:
+  sbolexplorer:
     image: michael13162/sbolexplorer:latest
     ports:
       - "13162:13162"
