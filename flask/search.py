@@ -279,6 +279,7 @@ def search(sparql_query, uri2rank, clusters):
         # empty search
         es_response = empty_search_es(offset, limit, allowed_graphs)
         bindings = create_bindings(es_response, clusters, allowed_graphs)
+        bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
         return create_response(sparql_query, es_response['hits']['total'], bindings)
 
     else:
