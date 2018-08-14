@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-
 import org.sbolstandard.core2.Component;
 import org.sbolstandard.core2.ComponentDefinition;
 import org.sbolstandard.core2.SBOLDocument;
@@ -15,14 +14,16 @@ import org.synbiohub.frontend.IdentifiedMetadata;
 import org.synbiohub.frontend.SynBioHubException;
 import org.synbiohub.frontend.SynBioHubFrontend;
 
-import com.google.common.base.Function;
 import com.google.common.collect.Lists;
 
 public class MetricTest {
 
-	private static final int NUM_PARTS = 80;
+	private static final int NUM_PARTS = 200;
 	private static final String SYNBIOHUB_BACKEND_URL = "http://localhost:7777";
-	private static final String GET_SBOL_SYNBIOHUB_BACKEND_URL = "https://synbiohub.org";
+	private static final String SYNBIOHUB_URI_PREFIX = "https://synbiohub.org";
+
+	private static final SynBioHubFrontend frontend = new SynBioHubFrontend(SYNBIOHUB_BACKEND_URL,
+			SYNBIOHUB_URI_PREFIX);
 
 	public static void main(String[] args) throws Exception {
 		List<ComponentDefinition> engineeredRegions = getEngineeredRegions();
@@ -41,44 +42,53 @@ public class MetricTest {
 	}
 
 	private static List<ComponentDefinition> getEngineeredRegions() throws IOException, Exception {
-		SynBioHubQuery query = new SynBioHubQuery(new SynBioHubFrontend(SYNBIOHUB_BACKEND_URL),
+		SynBioHubQuery query = new SynBioHubQuery(frontend,
 				new HashSet<URI>(Arrays.asList(SequenceOntology.ENGINEERED_REGION)), new HashSet<URI>(),
 				new HashSet<URI>(), null, "ComponentDefinition");
 
-		SynBioHubFrontend getSBOLFrontend = new SynBioHubFrontend(GET_SBOL_SYNBIOHUB_BACKEND_URL);
+		ArrayList<IdentifiedMetadata> metadatas = query.execute();
+		ArrayList<ComponentDefinition> cds = new ArrayList<>();
 
-		Function<IdentifiedMetadata, ComponentDefinition> metadataToCD = new Function<IdentifiedMetadata, ComponentDefinition>() {
-			public ComponentDefinition apply(IdentifiedMetadata metadata) {
-				SBOLDocument doc;
-				try {
-					doc = getSBOLFrontend.getSBOL(URI.create(metadata.getUri()));
-					return doc.getRootComponentDefinitions().iterator().next();
-				} catch (SynBioHubException e) {
-					e.printStackTrace();
-					return null;
+		System.out.println(metadatas.size());
+		for (IdentifiedMetadata metadata : metadatas) {
+			try {
+				SBOLDocument doc = frontend.getSBOL(URI.create(metadata.getUri()));
+				ComponentDefinition cd = doc.getRootComponentDefinitions().iterator().next();
+
+				if (!cd.getComponents().isEmpty()) {
+					cds.add(cd);
+					System.out.println("got: " + cds.size());
+
+					if (cds.size() == NUM_PARTS) {
+						break;
+					}
 				}
+			} catch (SynBioHubException e) {
+				e.printStackTrace();
 			}
-		};
+		}
 
-		return Lists.transform(query.execute(), metadataToCD);
+		return cds;
 	}
 
 	private static ArrayList<Double> getMetric(int numParts, List<ComponentDefinition> engineeredRegions)
-			throws IOException, Exception {
-		SynBioHubFrontend frontend = new SynBioHubFrontend(SYNBIOHUB_BACKEND_URL);
-
+			throws Exception {
 		ArrayList<Double> scores = new ArrayList<>();
 
-		for (int i = 0; i < numParts; i++) {
-			ComponentDefinition seed = engineeredRegions.get(i);
-
-			SynBioHubQuery query = new SynBioHubQuery(frontend, new HashSet<URI>(), new HashSet<URI>(),
-					new HashSet<URI>(), seed.getDescription(), "ComponentDefinition");
-			List<String> results = Lists.transform(query.execute(), metadata -> metadata.getUri());
+		for (ComponentDefinition cd : engineeredRegions) {
+			List<String> results = null;
+			try {
+				SynBioHubQuery query = new SynBioHubQuery(frontend, new HashSet<URI>(), new HashSet<URI>(),
+						new HashSet<URI>(), cd.getDescription(), "ComponentDefinition");
+				results = Lists.transform(query.execute(), metadata -> metadata.getUri());
+			} catch (Exception e) {
+				System.out.println("Exception: skipping " + cd.getDisplayId());
+				continue;
+			}
 
 			ArrayList<Double> indices = new ArrayList<>();
 
-			for (Component child : seed.getComponents()) {
+			for (Component child : cd.getComponents()) {
 				int index = results.indexOf(child.getDefinition().getIdentity().toString());
 
 				if (index >= 0) {
@@ -88,12 +98,12 @@ public class MetricTest {
 				}
 			}
 
-			if (indices.isEmpty()) {
-				System.out.println("No children");
-			} else {
-				double score = average(indices);
-				System.out.println(score);
-				scores.add(score);
+			scores.add(average(indices));
+
+			System.out.print('|');
+
+			if (scores.size() == numParts) {
+				break;
 			}
 		}
 
