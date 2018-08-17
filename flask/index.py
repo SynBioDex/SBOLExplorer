@@ -47,7 +47,7 @@ def create_parts_index(index_name):
     print('Index created')
 
 
-def index_parts(parts_response, index_name):
+def bulk_index_parts(parts_response, index_name):
     actions = []
     for i in range(len(parts_response)):
         action = {
@@ -77,12 +77,12 @@ def update_index(uri2rank):
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
     create_parts_index(index_name)
-    index_parts(parts_response, index_name)
+    bulk_index_parts(parts_response, index_name)
 
     print('Number of parts: ' + str(len(parts_response)))
 
 
-def incrementally_update_index(subject, uri2rank):
+def delete_subject(subject):
     index_name = utils.get_config()['elasticsearch_index_name']
 
     body = {
@@ -93,11 +93,57 @@ def incrementally_update_index(subject, uri2rank):
     }
     utils.get_es().delete_by_query(index=index_name, doc_type=index_name, body=body)
 
+
+def index_part(part):
+    delete_subject(part['subject'])
+    index_name = utils.get_config()['elasticsearch_index_name']
+    utils.get_es().index(index=index_name, doc_type=index_name, body=part)
+
+
+def refresh_index(subject, uri2rank):
+    delete_subject(subject)
+
     part_response = query.query_parts('', 'FILTER (?subject = <' + subject + '>)')
 
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)
         add_keywords(part_response)
+        index_part(part_response[0])
 
-        utils.get_es().index(index=index_name, doc_type=index_name, body=part_response[0])
-    
+
+def incremental_update(updates, uri2rank):
+    if 'partsToRemove' in updates:
+        for subject in updates['partsToRemove']:
+            delete_subject(subject)
+
+    parts_to_add = updates['partsToAdd']
+    add_pagerank(parts_to_add, uri2rank)
+    add_keywords(parts_to_add)
+
+    for part in parts_to_add:
+        index_part(part)
+
+
+def incremental_remove(subject):
+    delete_subject(subject)
+
+
+def incremental_remove_collection(subject, uri_prefix):
+    collection_membership_query = '''
+    SELECT
+        ?s ?p ?o
+    WHERE {
+        ?s ?p ?o .
+        <''' + subject + '''> sbol2:member ?member .
+        ?s sbh:topLevel ?member .
+        FILTER(STRSTARTS(str(?s),''' + "'" + uri_prefix + "'" + '''))
+    }
+    '''
+    # TODO need topLevel line?
+    members = query.query_sparql(collection_membership_query)
+
+    delete_subject(subject)
+    for member in members:
+        delete_subject(member['s'])
+
+
