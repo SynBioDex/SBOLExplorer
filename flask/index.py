@@ -131,15 +131,12 @@ def incremental_remove(subject):
 def incremental_remove_collection(subject, uri_prefix):
     collection_membership_query = '''
     SELECT
-        ?s ?p ?o
+        ?s
     WHERE {
-        ?s ?p ?o .
-        <''' + subject + '''> sbol2:member ?member .
-        ?s sbh:topLevel ?member .
+        <''' + subject + '''> sbol2:member ?s .
         FILTER(STRSTARTS(str(?s),''' + "'" + uri_prefix + "'" + '''))
     }
     '''
-    # TODO need topLevel line?
     members = query.query_sparql(collection_membership_query)
 
     delete_subject(subject)
