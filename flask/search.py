@@ -1,6 +1,7 @@
 from elasticsearch_dsl import Search
 from xml.etree import ElementTree
 import re
+import requests
 import utils
 import query
 
@@ -95,19 +96,25 @@ def extract_query(sparql_query):
 
 
 def extract_allowed_graphs(_from):
-    if _from == '':
-        return [utils.get_config()['synbiohub_public_graph']]
-
     allowed_graphs = []
 
-    for graph in _from.split('FROM'):
-        graph = graph.strip()
-        graph = graph[1:len(graph) - 1]
+    if utils.get_config()['distributed_search']:
+        instances = requests.get('https://wor.synbiohub.org/instances/').json()
+        for instance in instances:
+            allowed_graphs.append(instance['instanceUrl'] + '/public')
 
-        if graph != '':
-            allowed_graphs.append(graph)
+    if _from == '':
+        allowed_graphs.append(utils.get_config()['synbiohub_public_graph'])
+        return allowed_graphs
+    else:
+        for graph in _from.split('FROM'):
+            graph = graph.strip()
+            graph = graph[1:len(graph) - 1]
 
-    return allowed_graphs
+            if graph != '':
+                allowed_graphs.append(graph)
+
+        return allowed_graphs
 
 
 def is_count_query(sparql_query):
