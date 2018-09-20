@@ -114,13 +114,14 @@ def pagerank(g, s=0.85, tolerance=0.001):
     iteration = 1
     delta = 2
     
-    dangling_contrib = sum([p[j] for j in g.dangling_pages]) / n
-    teleportation_contrib = 1 / n
-    
     while delta > tolerance:
         print('iteration: ' + str(iteration))
         
         v = np.matrix(np.zeros((n, 1)))
+
+        dangling_contrib = sum([p[j] for j in g.dangling_pages]) / n
+        teleportation_contrib = 1 / n
+    
         for j in range(n):
             link_contrib = sum([p[k] / g.number_out_links[k] for k in g.in_links[j]])
             v[j] = s * link_contrib + s * dangling_contrib + (1 - s) * teleportation_contrib
