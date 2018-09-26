@@ -1,0 +1,10 @@
+{
+  "distributed_search": true, 
+  "elasticsearch_endpoint": "http://elasticsearch:9200/", 
+  "elasticsearch_index_name": "part", 
+  "pagerank_tolerance": "0.0001", 
+  "sparql_endpoint": "http://virtuoso:8890/sparql?", 
+  "synbiohub_public_graph": "https://synbiohub.utah.edu/public", 
+  "uclust_identity": "0.8"
+}
+
