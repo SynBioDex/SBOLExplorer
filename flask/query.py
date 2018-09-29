@@ -3,6 +3,7 @@ import urllib.parse
 from functools import lru_cache
 import json
 import utils
+import re
 
 
 def query_parts(_from = '', criteria = ''):
@@ -37,17 +38,17 @@ def memoized_query_sparql(query):
 
 
 def query_sparql(query):
-    remotes = [(utils.get_config()['sparql_endpoint'], utils.get_config()['synbiohub_public_graph'])]
+    endpoints = [utils.get_config()['sparql_endpoint']]
 
     if utils.get_config()['distributed_search']:
         instances = requests.get('https://wor.synbiohub.org/instances/').json()
         for instance in instances:
-            remotes.append((instance['instanceUrl'] + '/sparql?', instance['instanceUrl'] + '/public'))
+            endpoints.append(instance['instanceUrl'] + '/sparql?')
 
     results = []
 
-    for endpoint, graph_uri in remotes:
-        results.extend(page_query(query, graph_uri, endpoint))
+    for endpoint in endpoints:
+        results.extend(page_query(query, endpoint))
 
     return deduplicate_results(results)
 
@@ -61,8 +62,11 @@ def deduplicate_results(results):
     return [json.loads(result) for result in deduped]
 
 
-def page_query(query, graph_uri, endpoint):
+def page_query(query, endpoint):
     print('endpoint: ' + endpoint)
+
+    if endpoint != utils.get_config()['sparql_endpoint']:
+        query = re.sub(r'''FROM.*\n''', '', query)
 
     query_prefix = '''
     PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -86,7 +90,7 @@ def page_query(query, graph_uri, endpoint):
 
     while True:
         full_query = query_prefix + query + 'OFFSET ' + str(offset) + ' LIMIT ' + str(limit)
-        new_results = send_query(full_query, graph_uri, endpoint)
+        new_results = send_query(full_query, endpoint)
         results.extend(new_results)
         print(str(len(results)) + ' ', end='', flush=True)
 
@@ -99,13 +103,19 @@ def page_query(query, graph_uri, endpoint):
     return results
 
 
-def send_query(query, graph_uri, endpoint):
-    url = endpoint + urllib.parse.urlencode({'query': query, 'default-graph-uri': graph_uri})
+def send_query(query, endpoint):
+    params = {'query': query}
+    if endpoint == utils.get_config()['sparql_endpoint']:
+        params['default-graph-uri'] = utils.get_config()['synbiohub_public_graph']
+
+    url = endpoint + urllib.parse.urlencode(params)
     headers = {'Accept': 'application/json'}
     r = requests.get(url, headers=headers)
 
     if r.status_code != 200:
         print('Error, got status code: ' + str(r.status_code))
+        print(r.text)
+        return
 
     results = []
 
