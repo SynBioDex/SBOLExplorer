@@ -37,17 +37,17 @@ def memoized_query_sparql(query):
 
 
 def query_sparql(query):
-    endpoints = [utils.get_config()['sparql_endpoint']]
+    remotes = [(utils.get_config()['sparql_endpoint'], utils.get_config()['synbiohub_public_graph'])]
 
     if utils.get_config()['distributed_search']:
         instances = requests.get('https://wor.synbiohub.org/instances/').json()
         for instance in instances:
-            endpoints.append(instance['instanceUrl'] + '/sparql?')
+            remotes.append((instance['instanceUrl'] + '/sparql?', instance['instanceUrl'] + '/public'))
 
     results = []
 
-    for endpoint in endpoints:
-        results.extend(page_query(query, endpoint))
+    for endpoint, graph_uri in remotes:
+        results.extend(page_query(query, graph_uri, endpoint))
 
     return deduplicate_results(results)
 
@@ -61,7 +61,7 @@ def deduplicate_results(results):
     return [json.loads(result) for result in deduped]
 
 
-def page_query(query, endpoint):
+def page_query(query, graph_uri, endpoint):
     print('endpoint: ' + endpoint)
 
     query_prefix = '''
@@ -86,7 +86,7 @@ def page_query(query, endpoint):
 
     while True:
         full_query = query_prefix + query + 'OFFSET ' + str(offset) + ' LIMIT ' + str(limit)
-        new_results = send_query(full_query, endpoint)
+        new_results = send_query(full_query, graph_uri, endpoint)
         results.extend(new_results)
         print(str(len(results)) + ' ', end='', flush=True)
 
@@ -99,8 +99,8 @@ def page_query(query, endpoint):
     return results
 
 
-def send_query(query, endpoint):
-    url = endpoint + urllib.parse.urlencode({'query': query})
+def send_query(query, graph_uri, endpoint):
+    url = endpoint + urllib.parse.urlencode({'query': query, 'default-graph-uri': graph_uri})
     headers = {'Accept': 'application/json'}
     r = requests.get(url, headers=headers)
 
