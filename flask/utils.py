@@ -1,6 +1,7 @@
 from elasticsearch import Elasticsearch
 import json
 import pickle
+import requests
 
 
 config = None
@@ -28,11 +29,18 @@ def set_config(new_config):
         json.dump(config, f)
 
 
+def get_wor():
+    instances = requests.get('https://wor.synbiohub.org/instances/')
+    if instances.status_code != 200:
+        raise Exception('Web of Registries had a problem')
+    return instances.json()
+
+
 def get_es():
     es = Elasticsearch([get_config()['elasticsearch_endpoint']], verify_certs=True)
 
     if not es.ping():
-        raise ValueError('Connection failed')
+        raise ValueError('Elasticsearch connection failed')
 
     return es
 

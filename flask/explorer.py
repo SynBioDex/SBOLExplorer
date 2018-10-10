@@ -17,6 +17,11 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
+@app.errorhandler(Exception)
+def handle_error(e):
+    print('Returning error ' + str(e))
+    return jsonify(error=str(e)), 500
+
 
 @app.route('/info', methods=['GET'])
 def info():
