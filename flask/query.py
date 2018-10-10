@@ -41,7 +41,7 @@ def query_sparql(query):
     endpoints = [utils.get_config()['sparql_endpoint']]
 
     if utils.get_config()['distributed_search']:
-        instances = requests.get('https://wor.synbiohub.org/instances/').json()
+        instances = utils.get_wor()
         for instance in instances:
             endpoints.append(instance['instanceUrl'] + '/sparql?')
 
@@ -113,9 +113,9 @@ def send_query(query, endpoint):
     r = requests.get(url, headers=headers)
 
     if r.status_code != 200:
-        print('Error, got status code: ' + str(r.status_code))
+        print('Error, got status code when querying: ' + str(r.status_code))
         print(r.text)
-        return
+        raise Exception(url + ' is not responding')
 
     results = []
 

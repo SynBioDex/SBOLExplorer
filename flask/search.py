@@ -99,7 +99,7 @@ def extract_allowed_graphs(_from):
     allowed_graphs = []
 
     if utils.get_config()['distributed_search']:
-        instances = requests.get('https://wor.synbiohub.org/instances/').json()
+        instances = utils.get_wor()
         for instance in instances:
             allowed_graphs.append(instance['instanceUrl'] + '/public')
 
