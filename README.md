@@ -19,8 +19,6 @@ SBOLExplorer is a service that simplifies the process of analyzing and searching
     * To change the update period, edit update.cron
 9. In SynBioHub, go to the Admin->General page and specify `http://localhost:13162/` as the SBOLExplorer endpoint, check the `Searching Using SBOLExplorer` checkbox, and click `Save`.  Searches will now go through SBOLExplorer.
 
-# Phase 0: Visualization
-
 ![alt text](https://raw.githubusercontent.com/michael13162/SBOLExplorer/master/visualization/network.png)
 
 To run a neat visualization, go to the force_directed_graph folder and run "http-server" in the command line.  Then, open the browser to the hosted page.  Shown is a network visualization of part usage in SynBioHub.
