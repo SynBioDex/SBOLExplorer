@@ -27,7 +27,7 @@ RUN mkdir /mnt/config && \
     rm -rf dumps && \
     ln -s /mnt/data dumps
 
-ADD config-synbiohub.standalone /mnt/config/config.json
+ADD config-synbiohub.json /mnt/config/config.json
 
 CMD "./start.sh"
 
