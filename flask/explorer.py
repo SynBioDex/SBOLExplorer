@@ -106,6 +106,16 @@ def sparql_search_endpoint():
 
     response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters()))
 
-    print('Successfully searched')
+    print('Successfully sparql searched')
+    return response
+
+
+@app.route('/search', methods=['GET'])
+def search_by_string():
+    query = request.args.get('query')
+
+    response = jsonify(search.search_es(query)['hits'])
+
+    print('Successfully string searched')
     return response
 

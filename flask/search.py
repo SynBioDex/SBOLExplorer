@@ -121,8 +121,8 @@ def is_count_query(sparql_query):
     return 'SELECT (count(distinct' in sparql_query
 
 
-def create_response(sparql_query, count, bindings):
-    if is_count_query(sparql_query):
+def create_response(count, bindings, return_count):
+    if return_count:
         response = {"head":{"link":[],"vars":["count"]},"results":{"distinct":False,"ordered":True,"bindings":[{"count":{"type":"typed-literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"10"}}]}}
         response['results']['bindings'][0]['count']['value'] = str(count)
     else:
@@ -287,7 +287,7 @@ def search(sparql_query, uri2rank, clusters):
         es_response = empty_search_es(offset, limit, allowed_graphs)
         bindings = create_bindings(es_response, clusters, allowed_graphs)
         bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
-        return create_response(sparql_query, es_response['hits']['total'], bindings)
+        return create_response(es_response['hits']['total'], bindings, is_count_query(sparql_query))
 
     else:
         es_response = search_es(es_query)
@@ -304,5 +304,5 @@ def search(sparql_query, uri2rank, clusters):
 
     bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
 
-    return create_response(sparql_query, len(bindings), bindings[offset:offset + limit])
+    return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
