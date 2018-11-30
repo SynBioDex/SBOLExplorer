@@ -17,6 +17,12 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
+
+@app.before_first_request
+def startup():
+    utils.log('SBOLExplorer started :)')
+
+
 @app.errorhandler(Exception)
 def handle_error(e):
     utils.log('[ERROR] Returning error ' + str(e))
@@ -25,9 +31,8 @@ def handle_error(e):
 
 @app.route('/info', methods=['GET'])
 def info():
-    success_message = 'Explorer up!!! Virtutoso ' + str(query.memoized_query_sparql.cache_info())
-    utils.log(success_message)
-    return success_message
+    utils.log('Explorer up!!! Virtutoso ' + str(query.memoized_query_sparql.cache_info()))
+    return utils.get_log()
 
 
 @app.route('/config', methods=['POST', 'GET'])

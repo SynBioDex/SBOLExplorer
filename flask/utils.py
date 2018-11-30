@@ -48,11 +48,16 @@ def get_es():
 
 
 def log(message):
-    log_message = '[' + datetime.datetime.now() + '] ' + message + '\n'
+    log_message = '[' + str(datetime.datetime.now()) + '] ' + message + '\n'
     print(log_message)
 
     with open('log.txt', 'a+') as f:
         f.write(log_message)
+
+
+def get_log():
+    with open('log.txt', 'r') as f:
+        return f.read()
 
 
 clusters = None
