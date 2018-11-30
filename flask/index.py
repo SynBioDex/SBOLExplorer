@@ -26,7 +26,7 @@ def add_keywords(parts_response):
 
 def create_parts_index(index_name):
     if utils.get_es().indices.exists(index_name):
-        print('Index already exists -> deleting')
+        utils.log('Index already exists -> deleting')
         utils.get_es().indices.delete(index=index_name)
 
     mapping = {
@@ -44,7 +44,7 @@ def create_parts_index(index_name):
         }
     }
     utils.get_es().indices.create(index=index_name, body=mapping)
-    print('Index created')
+    utils.log('Index created')
 
 
 def bulk_index_parts(parts_response, index_name):
@@ -59,27 +59,27 @@ def bulk_index_parts(parts_response, index_name):
 
         actions.append(action)
 
-    print('Bulk indexing')
+    utils.log('Bulk indexing')
     stats = helpers.bulk(utils.get_es(), actions)
     if len(stats[1]) == 0:
-        print('Bulk indexing complete')
+        utils.log('Bulk indexing complete')
     else:
-        print('Error_messages: ' + '\n'.join(stats[1]))
+        utils.log('[Error] Error_messages: ' + '\n'.join(stats[1]))
 
 
 def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
-    print('Query for parts')
+    utils.log('Query for parts')
     parts_response = query.query_parts()
-    print('Query for parts complete')
+    utils.log('Query for parts complete')
 
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
     create_parts_index(index_name)
     bulk_index_parts(parts_response, index_name)
 
-    print('Number of parts: ' + str(len(parts_response)))
+    utils.log('Number of parts: ' + str(len(parts_response)))
 
 
 def delete_subject(subject):

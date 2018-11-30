@@ -48,7 +48,10 @@ def query_sparql(query):
     results = []
 
     for endpoint in endpoints:
-        results.extend(page_query(query, endpoint))
+        try:
+            results.extend(page_query(query, endpoint))
+        except:
+            utils.log('[ERROR] failed querying:' + endpoint)
 
     return deduplicate_results(results)
 
@@ -63,7 +66,7 @@ def deduplicate_results(results):
 
 
 def page_query(query, endpoint):
-    print('endpoint: ' + endpoint)
+    utils.log('endpoint: ' + endpoint)
 
     if endpoint != utils.get_config()['sparql_endpoint']:
         query = re.sub(r'''FROM.*\n''', '', query)
@@ -92,10 +95,10 @@ def page_query(query, endpoint):
         full_query = query_prefix + query + 'OFFSET ' + str(offset) + ' LIMIT ' + str(limit)
         new_results = send_query(full_query, endpoint)
         results.extend(new_results)
-        print(str(len(results)) + ' ', end='', flush=True)
+        utils.log(str(len(results)) + ' ', end='', flush=True)
 
         if len(new_results) != limit:
-            print()
+            utils.log('\n')
             break
 
         offset += limit
@@ -113,8 +116,8 @@ def send_query(query, endpoint):
     r = requests.get(url, headers=headers)
 
     if r.status_code != 200:
-        print('Error, got status code when querying: ' + str(r.status_code))
-        print(r.text)
+        utils.log('[Error] Got status code when querying: ' + str(r.status_code))
+        utils.log(r.text)
         raise Exception(url + ' is not responding')
 
     results = []

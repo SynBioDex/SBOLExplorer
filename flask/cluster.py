@@ -35,7 +35,7 @@ def run_uclust():
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    print(output)
+    utils.log(output)
 
 
 def analyze_uclust():
@@ -59,9 +59,9 @@ def analyze_uclust():
                 hits += 1
     
     f.close()
-    print('parts: ' + str(total_parts))
-    print('hits: ' + str(hits))
-    print('average hit identity: ' + str(total_identity / hits))
+    utils.log('parts: ' + str(total_parts))
+    utils.log('hits: ' + str(hits))
+    utils.log('average hit identity: ' + str(total_identity / hits))
 
 
 def uclust2clusters():
@@ -96,14 +96,14 @@ def uclust2clusters():
 
 
 def update_clusters():
-    print('Query for sequences')
+    utils.log('Query for sequences')
     sequences_response = query.query_sparql(sequence_query)
-    print('Query for sequences complete')
+    utils.log('Query for sequences complete')
     write_fasta(sequences_response)
 
-    print('Running uclust')
+    utils.log('Running uclust')
     run_uclust()
-    print('Running uclust complete')
+    utils.log('Running uclust complete')
 
     analyze_uclust()
     return uclust2clusters()

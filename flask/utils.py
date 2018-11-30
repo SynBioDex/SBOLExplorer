@@ -2,6 +2,7 @@ from elasticsearch import Elasticsearch
 import json
 import pickle
 import requests
+import datetime
 
 
 config = None
@@ -32,7 +33,8 @@ def set_config(new_config):
 def get_wor():
     instances = requests.get('https://wor.synbiohub.org/instances/')
     if instances.status_code != 200:
-        raise Exception('Web of Registries had a problem')
+        log('[ERROR] Web of Registries had a problem!')
+        return []
     return instances.json()
 
 
@@ -43,6 +45,14 @@ def get_es():
         raise ValueError('Elasticsearch connection failed')
 
     return es
+
+
+def log(message):
+    log_message = '[' + datetime.datetime.now() + '] ' + message + '\n'
+    print(log_message)
+
+    with open('log.txt', 'a+') as f:
+        f.write(log_message)
 
 
 clusters = None

@@ -115,7 +115,7 @@ def pagerank(g, s=0.85, tolerance=0.001):
     delta = 2
     
     while delta > tolerance:
-        print('iteration: ' + str(iteration))
+        utils.log('iteration: ' + str(iteration))
         
         v = np.matrix(np.zeros((n, 1)))
 
@@ -128,7 +128,7 @@ def pagerank(g, s=0.85, tolerance=0.001):
         new_p = v / np.sum(v)
             
         delta = np.sum(np.abs(p - new_p))
-        print('L1 norm delta: ' + str(delta))
+        utils.log('L1 norm delta: ' + str(delta))
         
         p = new_p
         iteration += 1
@@ -146,20 +146,20 @@ def make_uri2rank(pr_vector, uri2index):
 
 
 def update_pagerank():
-    print('Query for uris')
+    utils.log('Query for uris')
     uri_response = query.query_sparql(uri_query)
-    print('Query for uris complete')
+    utils.log('Query for uris complete')
     adjacency_list = populate_uris(uri_response)
 
-    print('Query for links')
+    utils.log('Query for links')
     link_response = query.query_sparql(link_query)
-    print('Query for links complete')
+    utils.log('Query for links complete')
     populate_links(link_response, adjacency_list)
 
     g = graph(adjacency_list)
-    print('Running pagerank')
+    utils.log('Running pagerank')
     pr = pagerank(g, tolerance=float(utils.get_config()['pagerank_tolerance']))
-    print('Running pagerank complete')
+    utils.log('Running pagerank complete')
     pr_vector = np.squeeze(np.asarray(pr))
 
     return make_uri2rank(pr_vector, g.uri2index)
