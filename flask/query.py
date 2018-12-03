@@ -95,7 +95,7 @@ def page_query(query, endpoint):
         full_query = query_prefix + query + 'OFFSET ' + str(offset) + ' LIMIT ' + str(limit)
         new_results = send_query(full_query, endpoint)
         results.extend(new_results)
-        utils.log(str(len(results)) + ' ', end='', flush=True)
+        utils.log(str(len(results)) + ' ')
 
         if len(new_results) != limit:
             utils.log('\n')
