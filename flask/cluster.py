@@ -35,7 +35,8 @@ def run_uclust():
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    utils.log(output)
+    #utils.log(output)  # This is giving error "must be str, not bytes"?
+    print(output)
 
 
 def analyze_uclust():
