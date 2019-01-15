@@ -108,12 +108,19 @@ def page_query(query, endpoint):
 
 def send_query(query, endpoint):
     params = {'query': query}
+
     if endpoint == utils.get_config()['sparql_endpoint']:
         params['default-graph-uri'] = utils.get_config()['synbiohub_public_graph']
 
     url = endpoint + urllib.parse.urlencode(params)
     headers = {'Accept': 'application/json'}
-    r = requests.get(url, headers=headers)
+    
+    try:
+        r = requests.get(url, headers=headers)
+    except Exception as e:
+        utils.log("[Error] exception when connecting: " + str(e))
+        if endpoint == utils.get_config()['sparql_endpoint']:
+            raise Exception("Local SynBioHub isn't responding")
 
     if r.status_code != 200:
         utils.log('[Error] Got status code when querying: ' + str(r.status_code))

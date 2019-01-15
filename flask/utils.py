@@ -31,10 +31,16 @@ def set_config(new_config):
 
 
 def get_wor():
-    instances = requests.get('https://wor.synbiohub.org/instances/')
+    try: 
+        instances = requests.get('https://wor.synbiohub.org/instances/')
+    except Exception:
+        log('[ERROR] Web of Registries had a problem!')
+        return []
+
     if instances.status_code != 200:
         log('[ERROR] Web of Registries had a problem!')
         return []
+
     return instances.json()
 
 
