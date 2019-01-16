@@ -62,7 +62,9 @@ def analyze_uclust():
     f.close()
     utils.log('parts: ' + str(total_parts))
     utils.log('hits: ' + str(hits))
-    utils.log('average hit identity: ' + str(total_identity / hits))
+
+    if hits > 0:
+        utils.log('average hit identity: ' + str(total_identity / hits))
 
 
 def uclust2clusters():
