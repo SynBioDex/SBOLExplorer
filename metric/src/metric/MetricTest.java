@@ -116,10 +116,18 @@ public class MetricTest {
 		System.out.println("Averages:");
 		System.out.println("Using SBOLExplorer: " + average(sbolExplorerScores));
 		System.out.println("Without using SBOLExplorer: " + average(noSBOLExplorerScores));
+
+		System.out.println("Medians:");
+		System.out.println("Using SBOLExplorer: " + median(sbolExplorerScores));
+		System.out.println("Without using SBOLExplorer: " + median(noSBOLExplorerScores));
 	}
 
 	private static double average(ArrayList<Double> list) {
 		return list.stream().mapToDouble(d -> d).average().orElse(0.0);
 	}
 
+	private static double median(ArrayList<Double> list) {
+		Collections.sort(list);
+		return list.get(list.size() / 2);
+	}
 }
