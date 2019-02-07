@@ -19,7 +19,7 @@ import com.google.common.collect.Lists;
 
 public class MetricTest {
 
-	private static final int NUM_PARTS = 200;
+	private static final int NUM_PARTS = 5000;
 	private static final String SYNBIOHUB_BACKEND_URL = "https://dev.synbiohub.org";
 	private static final String SYNBIOHUB_BACKEND_URL_NOEX = "https://synbiohub.org";
 	private static final String SYNBIOHUB_URI_PREFIX = "https://synbiohub.org";
@@ -48,8 +48,8 @@ public class MetricTest {
 
 	private static List<ComponentDefinition> getEngineeredRegions() throws IOException, Exception {
 		HashSet<URI> collections = new HashSet<URI>();
-		//collections.add(URI.create("https://synbiohub.org/public/igem/igem_collection/1"));
-		SynBioHubQuery query = new SynBioHubQuery(frontend,
+		collections.add(URI.create("https://synbiohub.org/public/igem/igem_collection/1"));
+		SynBioHubQuery query = new SynBioHubQuery(frontend_noex,
 				new HashSet<URI>(Arrays.asList(SequenceOntology.ENGINEERED_REGION)), new HashSet<URI>(),
 				collections, null, "ComponentDefinition");
 
@@ -60,7 +60,7 @@ public class MetricTest {
 		for (IdentifiedMetadata metadata : metadatas) {
 			System.out.println("Fetching: "+metadata.getUri() + " (" + cds.size() + ")");
 			try {
-				SBOLDocument doc = frontend.getSBOL(URI.create(metadata.getUri()));
+				SBOLDocument doc = frontend.getSBOL(URI.create(metadata.getUri()),false);
 				ComponentDefinition cd = doc.getRootComponentDefinitions().iterator().next();
 
 				if (!cd.getComponents().isEmpty()) {
@@ -87,7 +87,7 @@ public class MetricTest {
 		ArrayList<Double> indices = new ArrayList<>();
 		int parts = 0;
 		int total = 0;
-		int notFound = 0;
+		int found = 0;
 		
 		for (ComponentDefinition cd : engineeredRegions) {
 			parts++;
@@ -96,35 +96,35 @@ public class MetricTest {
 				HashSet<URI> collections = new HashSet<URI>();
 //				collections.add(URI.create("https://synbiohub.org/public/igem/igem_collection/1"));
 				SynBioHubQuery query = new SynBioHubQuery(frontend, new HashSet<URI>(), new HashSet<URI>(),
-						collections, cd.getDescription(), "ComponentDefinition");
+						collections, cd.getDescription().replaceAll("&"," ").replace("'", "").trim(), "ComponentDefinition");
 				results = Lists.transform(query.execute(), metadata -> metadata.getUri());
 			} catch (Exception e) {
 				System.out.println("Exception: skipping " + cd.getDisplayId());
+				e.printStackTrace();
 				continue;
 			}
 //			ArrayList<Double> indices = new ArrayList<>();
 
 			for (Component child : cd.getComponents()) {
-				int index = results.indexOf(child.getDefinition().getIdentity().toString());
+				int index = results.indexOf(child.getDefinitionURI().toString());
 				total++;
 				if (index >= 0) {
+					found++;
 					indices.add((double) index);
 				} else {
-					notFound++;
 					//indices.add(10000.0);
 				}
 			}
 			//if (indices.size()>0) {
 				//scores.add(average(indices));
 			//}
-			System.out.print('|');
+			System.out.println(cd.getIdentity() + " (" + found + " out of " + total + ")");
 
 			if (parts == numParts) {
 				break;
 			}
 		}
-		System.out.println("");
-		System.out.println(notFound+" not found out of "+total);
+		System.out.println("Total: "+found+" found out of "+total);
 		return indices;
 	}
 

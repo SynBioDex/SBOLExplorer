@@ -58,14 +58,14 @@ public class SynBioHubQuery {
 			query.addCriteria(criteria);
 		}
 
-		if (filterText != null && filterText != "") {
+		if (filterText != null && !filterText.equals("")) {
 			SearchCriteria filterTextCriteria = new SearchCriteria();
 			filterTextCriteria.setKey("name");
 			filterTextCriteria.setValue(filterText);
 			query.addCriteria(filterTextCriteria);
 		}
 
-		if (objectType != null && objectType != "") {
+		if (objectType != null && !objectType.equals("")) {
 			SearchCriteria objectTypeCriteria = new SearchCriteria();
 			objectTypeCriteria.setKey("objectType");
 			objectTypeCriteria.setValue(objectType);
