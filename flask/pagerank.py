@@ -113,6 +113,10 @@ def pagerank(g, s=0.85, tolerance=0.001):
     
     iteration = 1
     delta = 2
+
+    if n == 0:
+        utils.log('no iterations: empty graph')
+        return p
     
     while delta > tolerance:
         utils.log('iteration: ' + str(iteration))
