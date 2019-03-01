@@ -15,4 +15,4 @@ jobs:
           docker push michael13162/sbolexplorer:snapshot;
           docker push michael13162/sbolexplorer:snapshot-synbiohub;
           fi
-      if: branch = master
+      if: branch = master AND type = push
