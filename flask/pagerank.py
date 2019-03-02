@@ -110,6 +110,11 @@ def populate_links(link_response, adjacency_list):
 def pagerank(g, s=0.85, tolerance=0.001):
     n = g.size
     p = np.matrix(np.ones((n, 1))) / n
+
+
+    if n == 0:
+        utils.log('no iterations: empty graph')
+        return p
     
     iteration = 1
     delta = 2
