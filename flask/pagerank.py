@@ -167,5 +167,9 @@ def update_pagerank():
     utils.log('Running pagerank complete')
     pr_vector = np.squeeze(np.asarray(pr))
 
+    # after squeeze, make sure it at least has a dimension in the case that there is only one element
+    if pr_vector.shape == ():
+        pr_vector = numpy.array([pr_vector])
+    
     return make_uri2rank(pr_vector, g.uri2index)
 
