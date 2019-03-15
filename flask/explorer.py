@@ -51,9 +51,12 @@ def update():
     subject = request.args.get('subject')
 
     if subject is None:
+        utils.save_update_start_time()
+
         clusters = cluster.update_clusters()
         utils.save_clusters(clusters)
-
+        
+        
         uri2rank = pagerank.update_pagerank()
         utils.save_uri2rank(uri2rank)
 
@@ -62,6 +65,7 @@ def update():
         query.memoized_query_sparql.cache_clear()
         utils.log('Cache cleared')
 
+        utils.save_update_end_time()
         success_message = 'Successfully updated entire index'
     else:
         index.refresh_index(subject, utils.get_uri2rank())
