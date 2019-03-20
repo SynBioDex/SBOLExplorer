@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+import traceback
+
 from flask import Flask
 from flask import request
 from flask import jsonify
@@ -10,6 +12,7 @@ import index
 import search
 import utils
 import query
+
 
 
 log = logging.getLogger('werkzeug')
@@ -25,7 +28,7 @@ def startup():
 
 @app.errorhandler(Exception)
 def handle_error(e):
-    utils.log('[ERROR] Returning error ' + str(e))
+    utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
     return jsonify(error=str(e)), 500
 
 
