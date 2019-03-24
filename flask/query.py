@@ -110,7 +110,7 @@ def send_query(query, endpoint):
     params = {'query': query}
 
     if endpoint == utils.get_config()['sparql_endpoint']:
-        params['default-graph-uri'] = utils.get_config()['synbiohub_public_graph']
+        params['default-graph-uri'] = '' # utils.get_config()['synbiohub_public_graph']
 
     url = endpoint + urllib.parse.urlencode(params)
     headers = {'Accept': 'application/json'}
