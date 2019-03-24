@@ -110,6 +110,11 @@ def populate_links(link_response, adjacency_list):
 def pagerank(g, s=0.85, tolerance=0.001):
     n = g.size
     p = np.matrix(np.ones((n, 1))) / n
+
+
+    if n == 0:
+        utils.log('no iterations: empty graph')
+        return p
     
     iteration = 1
     delta = 2
@@ -162,5 +167,9 @@ def update_pagerank():
     utils.log('Running pagerank complete')
     pr_vector = np.squeeze(np.asarray(pr))
 
+    # after squeeze, make sure it at least has a dimension in the case that there is only one element
+    if pr_vector.shape == ():
+        pr_vector = np.array([pr_vector])
+    
     return make_uri2rank(pr_vector, g.uri2index)
 

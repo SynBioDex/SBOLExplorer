@@ -29,6 +29,20 @@ def set_config(new_config):
     with open('config.json', 'w') as f:
         json.dump(config, f)
 
+def save_time(attribute):
+    config = get_config()
+
+    now = datetime.datetime.now()
+
+    config[attribute] = str(now)
+
+    set_config(config)
+
+def save_update_end_time():
+    save_time("last_update_end")
+def save_update_start_time():
+    save_time("last_update_start")
+        
 
 def get_wor():
     try: 
