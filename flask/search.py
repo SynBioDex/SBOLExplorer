@@ -264,13 +264,19 @@ def create_similar_criteria(criteria, clusters):
 
     return 'FILTER (' + ' || '.join(['?subject = <' + duplicate + '>' for duplicate in clusters[subject]]) + ')'
 
+def parse_allowed_graphs(allowed_graphs):
+    result = ''
+    for allowed_graph in allowed_graphs:
+        result += 'FROM <' + allowed_graph + '> '
+    return result
 
 def search(sparql_query, uri2rank, clusters):
     es_query, _from, criteria, offset, limit = extract_query(sparql_query)
 
     filterless_criteria = re.sub('FILTER .*', '', criteria).strip()
     allowed_graphs = extract_allowed_graphs(_from)
-
+    _from = parse_allowed_graphs(allowed_graphs)
+    
     if 'SIMILAR' in criteria:
         # SIMILAR
         similar_criteria = create_similar_criteria(criteria, clusters)
