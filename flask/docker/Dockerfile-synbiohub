@@ -3,7 +3,7 @@ MAINTAINER Michael Zhang <michael13162@gmail.com>
 
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
-    add-apt-repository ppa:jonathonf/python-3.6 && \
+    add-apt-repository ppa:deadsnakes/python-3.6 && \
     apt-get update && \
     apt-get install -y git python3.6 python3-pip && \
     python3.6 -m pip install pip --upgrade && \
