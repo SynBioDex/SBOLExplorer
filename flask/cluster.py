@@ -7,13 +7,20 @@ from sys import platform
 
 uclust_identity = utils.get_config()['uclust_identity'] # how similar sequences in the same cluster must be
 sequences_filename = 'usearch/sequences.fsa'
+whichSearch = utils.get_config()['which_search']
 
 if platform == "linux" or platform == "linux2":
-    usearch_binary_filename = 'usearch/usearch10.0.240_i86linux32'
+    if whichSearch == 'usearch':
+        usearch_binary_filename = 'usearch/usearch10.0.240_i86linux32'
+    elif whichSearch == 'vsearch':
+        usearch_binary_filename = 'usearch/vsearch_linux'
 elif platform == "darwin":
-    usearch_binary_filename = 'usearch/usearch11.0.667_i86osx32'
+    if whichSearch == 'usearch':
+        usearch_binary_filename = 'usearch/usearch11.0.667_i86osx32'
+    elif whichSearch == 'vsearch':
+        usearch_binary_filename = 'usearch/vsearch_macos'
 else:
-    print("Sorry, your OS is not supported by usearch.")
+    print("Sorry, your OS is not supported for sequence based-search.")
 
 uclust_results_filename = 'usearch/uclust_results.uc'
 
