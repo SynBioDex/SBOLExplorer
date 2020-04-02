@@ -24,6 +24,6 @@ SBOLExplorer is a service that simplifies the process of analyzing and searching
 To run a neat visualization, go to the force_directed_graph folder and run "http-server" in the command line.  Then, open the browser to the hosted page.  Shown is a network visualization of part usage in SynBioHub.
 
 # Automatic build and deploy
-On each commit to master, a new Docker image is built and pushed to [Docker Hubhttps://hub.docker.com/r/michael13162/sbolexplore://hub.docker.com/r/michael13162/sbolexplorer). 
+On each commit to master, a new Docker image is built and pushed to [Docker Hub](https://hub.docker.com/r/michael13162/sbolexplore://hub.docker.com/r/michael13162/sbolexplorer). 
 This is done by TravisCI.
 The credentials used to push the image are stored in Travis. 
