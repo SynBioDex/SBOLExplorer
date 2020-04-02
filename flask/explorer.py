@@ -12,6 +12,7 @@ import index
 import search
 import utils
 import query
+import sequencesearch
 
 
 
@@ -131,3 +132,12 @@ def search_by_string():
     utils.log('Successfully string searched')
     return response
 
+@app.route('/sequencesearch', methods=['POST'])
+def sequence_search():
+    params = request.get_json()
+    sequencesearch.write_to_fasta(params['sequence'])
+    search = sequencesearch.sequence_search(params['flags'])
+
+    success_message = 'Successfully sequence searched.'
+    utils.log(success_message)
+    return success_message

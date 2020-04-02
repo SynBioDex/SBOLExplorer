@@ -23,6 +23,7 @@ else:
     print("Sorry, your OS is not supported for sequence based-search.")
 
 uclust_results_filename = 'usearch/uclust_results.uc'
+test_results = 'usearch/sbsearch_uctable.uc'
 
 sequence_query = '''
 SELECT ?subject ?sequence
@@ -81,6 +82,25 @@ def analyze_uclust():
     if hits > 0:
         utils.log('average hit identity: ' + str(total_identity / hits))
 
+
+def uclust2uris():
+    uris = set()
+    
+    f = open(test_results, 'r')
+    results = f.read()
+    lines = results.splitlines()
+
+    for line in lines:
+        line = line.split()
+        
+        if line[0] is 'H':
+            partURI = line[9]
+
+            uris.add(partURI)
+
+    f.close()
+
+    return uris
 
 def uclust2clusters():
     # populate cluster2parts

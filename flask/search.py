@@ -4,7 +4,8 @@ import re
 import requests
 import utils
 import query
-
+import sequencesearch
+import cluster
 
 def search_es(es_query):
     body = {
@@ -86,13 +87,18 @@ def extract_query(sparql_query):
     if limit_search:
         limit = int(limit_search.group(1))
 
+    sequence = ''
+    sequence_search = re.search(r'''\s*\?subject sbol2:sequence \?seq \.\s*\?seq sbol2:elements \"([a-zA-Z]*)\"''', sparql_query)
+    if sequence_search:
+        sequence = sequence_search.group(1)
+
     extract_keyword_re = re.compile(r'''CONTAINS\(lcase\(\?displayId\), lcase\('([^']*)'\)\)''')
     keywords = []
     for keyword in re.findall(extract_keyword_re, criteria):
         keywords.append(keyword)
     es_query = ' '.join(keywords).strip()
 
-    return es_query, _from, criteria, offset, limit
+    return es_query, _from, criteria, offset, limit, sequence
 
 
 def extract_allowed_graphs(_from):
@@ -264,6 +270,9 @@ def create_similar_criteria(criteria, clusters):
 
     return 'FILTER (' + ' || '.join(['?subject = <' + duplicate + '>' for duplicate in clusters[subject]]) + ')'
 
+def create_sequence_criteria(criteria, uris):
+    return 'FILTER (' + ' || '.join(['?subject = <' + uri + '>' for uri in uris]) + ')'
+
 def parse_allowed_graphs(allowed_graphs):
     result = ''
     for allowed_graph in allowed_graphs:
@@ -271,13 +280,31 @@ def parse_allowed_graphs(allowed_graphs):
     return result
 
 def search(sparql_query, uri2rank, clusters):
-    es_query, _from, criteria, offset, limit = extract_query(sparql_query)
+    es_query, _from, criteria, offset, limit, sequence = extract_query(sparql_query)
 
     filterless_criteria = re.sub('FILTER .*', '', criteria).strip()
     allowed_graphs = extract_allowed_graphs(_from)
     _from = parse_allowed_graphs(allowed_graphs)
-    
-    if 'SIMILAR' in criteria:
+
+    if len(sequence.strip()) > 0:
+        if "advancedsequencesearch" in sequence:
+            results = cluster.uclust2uris()
+        else:
+            # send sequence search to search.py
+            if("EXACT" in sequence):
+                sequencesearch.write_to_fasta(sequence[5:])
+                results = sequencesearch.sequence_search(True)
+            else:
+                sequencesearch.write_to_fasta(sequence)
+                results = sequencesearch.sequence_search()
+
+        # return new clusters here
+        #pass into func -> queryparts create_sequence_criteria
+        sequence_criteria = create_sequence_criteria(criteria, results)
+        criteria_response = query.query_parts(_from, sequence_criteria) 
+        bindings = create_criteria_bindings(criteria_response, uri2rank)
+
+    elif 'SIMILAR' in criteria:
         # SIMILAR
         similar_criteria = create_similar_criteria(criteria, clusters)
         criteria_response = query.query_parts(_from, similar_criteria) 
