@@ -92,13 +92,18 @@ def extract_query(sparql_query):
     if sequence_search:
         sequence = sequence_search.group(1)
 
+    flags = {}
+    flag_search = re.finditer(r'''# flag_([a-zA-Z0-9._]*): ([a-zA-Z0-9.]*)''', sparql_query)
+    for flag in flag_search:
+        flags[flag.group(1)] = flag.group(2)
+
     extract_keyword_re = re.compile(r'''CONTAINS\(lcase\(\?displayId\), lcase\('([^']*)'\)\)''')
     keywords = []
     for keyword in re.findall(extract_keyword_re, criteria):
         keywords.append(keyword)
     es_query = ' '.join(keywords).strip()
 
-    return es_query, _from, criteria, offset, limit, sequence
+    return es_query, _from, criteria, offset, limit, sequence, flags
 
 
 def extract_allowed_graphs(_from):
@@ -280,23 +285,19 @@ def parse_allowed_graphs(allowed_graphs):
     return result
 
 def search(sparql_query, uri2rank, clusters):
-    es_query, _from, criteria, offset, limit, sequence = extract_query(sparql_query)
+    es_query, _from, criteria, offset, limit, sequence, flags = extract_query(sparql_query)
 
     filterless_criteria = re.sub('FILTER .*', '', criteria).strip()
     allowed_graphs = extract_allowed_graphs(_from)
     _from = parse_allowed_graphs(allowed_graphs)
 
     if len(sequence.strip()) > 0:
-        if "advancedsequencesearch" in sequence:
-            results = cluster.uclust2uris()
+        if 'advancedsequencesearch' in sequence:
+            results = sequencesearch.sequence_search(flags)
         else:
-            # send sequence search to search.py
-            if("EXACT" in sequence):
-                sequencesearch.write_to_fasta(sequence[5:])
-                results = sequencesearch.sequence_search(True)
-            else:
-                sequencesearch.write_to_fasta(sequence)
-                results = sequencesearch.sequence_search()
+        # send sequence search to search.py
+            sequencesearch.write_to_fasta(sequence)
+            results = sequencesearch.sequence_search(flags)
 
         # return new clusters here
         #pass into func -> queryparts create_sequence_criteria

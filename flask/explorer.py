@@ -136,7 +136,6 @@ def search_by_string():
 def sequence_search():
     params = request.get_json()
     sequencesearch.write_to_fasta(params['sequence'])
-    search = sequencesearch.sequence_search(params['flags'])
 
     success_message = 'Successfully sequence searched.'
     utils.log(success_message)
