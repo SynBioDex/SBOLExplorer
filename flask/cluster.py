@@ -7,6 +7,12 @@ from sys import platform
 
 uclust_identity = utils.get_config()['uclust_identity'] # how similar sequences in the same cluster must be
 sequences_filename = 'usearch/sequences.fsa'
+
+if 'which_search' not in utils.get_config():
+    explorerConfig = utils.get_config()
+    explorerConfig['which_search'] = 'vsearch'
+    utils.set_config(explorerConfig)
+
 whichSearch = utils.get_config()['which_search']
 
 if platform == "linux" or platform == "linux2":
