@@ -13,7 +13,7 @@ jobs:
     - name: Build the Docker image
       run: |
           RELEASE=$(echo $GITHUB_REF | cut -d'/' -f 3)
-          docker build . --file docker/Dockerfile --tag myersresearchgroup/sbolexplorer:$RELEASE-standalone
+          docker build . --file flask/docker/Dockerfile --tag myersresearchgroup/sbolexplorer:$RELEASE-standalone
     - uses: azure/docker-login@v1
       with:
           username: ${{ secrets.DOCKER_USERNAME }}
