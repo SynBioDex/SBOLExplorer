@@ -15,7 +15,7 @@ else:
     print("Sorry, your OS is not supported for sequence based-search.")
 
 # add valid flags to here
-globalFlags = {'maxaccepts': '50', 'id': '0.8', 'iddef': '2'}
+globalFlags = {'maxaccepts': '50', 'id': '0.8', 'iddef': '2', 'maxrejects': '0', 'maxseqlength': '5000', 'minseqlength': '20'}
 exactFlags = {}
 
 def write_to_fasta(sequence):
