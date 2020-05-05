@@ -116,8 +116,8 @@ def incremental_remove_collection():
 @app.route('/', methods=['GET'])
 def sparql_search_endpoint():
     sparql_query = request.args.get('query')
-
-    response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters()))
+    default_graph_uri = request.args.get('default-graph-uri')
+    response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
 
     utils.log('Successfully sparql searched')
     return response
