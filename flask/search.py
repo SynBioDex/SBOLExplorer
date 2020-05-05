@@ -269,13 +269,19 @@ def get_allowed_subjects(criteria_response):
 
 def create_similar_criteria(criteria, clusters):
     subject = criteria.split(':', 1)[1]
+	
+    if criteria.strip() == '':
+        return ''
 
-    if subject not in clusters or not clusters[subject]:
+    elif subject not in clusters or not clusters[subject]:
         return 'FILTER (?subject != ?subject)'
 
     return 'FILTER (' + ' || '.join(['?subject = <' + duplicate + '>' for duplicate in clusters[subject]]) + ')'
 
 def create_sequence_criteria(criteria, uris):
+    if criteria.strip() == '': 
+        return ''
+
     return 'FILTER (' + ' || '.join(['?subject = <' + uri + '>' for uri in uris]) + ')'
 
 def parse_allowed_graphs(allowed_graphs):
