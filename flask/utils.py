@@ -3,7 +3,7 @@ import json
 import pickle
 import requests
 import datetime
-
+from os import path
 
 config = None
 
@@ -123,6 +123,9 @@ def serialize(data, filename):
 
 
 def deserialize(filename):
+    if not path.exists(filename):
+        return {}
+
     f = open(filename, 'rb')
     data = pickle.load(f)
     f.close()
