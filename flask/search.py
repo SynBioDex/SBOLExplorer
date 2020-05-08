@@ -106,7 +106,7 @@ def extract_query(sparql_query):
     return es_query, _from, criteria, offset, limit, sequence, flags
 
 
-def extract_allowed_graphs(_from):
+def extract_allowed_graphs(_from, default_graph_uri):
     allowed_graphs = []
 
     if utils.get_config()['distributed_search']:
@@ -115,7 +115,7 @@ def extract_allowed_graphs(_from):
             allowed_graphs.append(instance['instanceUrl'] + '/public')
 
     if _from == '':
-        allowed_graphs.append(utils.get_config()['synbiohub_public_graph'])
+        allowed_graphs.append(default_graph_uri)
         return allowed_graphs
     else:
         for graph in _from.split('FROM'):
@@ -290,11 +290,11 @@ def parse_allowed_graphs(allowed_graphs):
         result += 'FROM <' + allowed_graph + '> '
     return result
 
-def search(sparql_query, uri2rank, clusters):
+def search(sparql_query, uri2rank, clusters, default_graph_uri):
     es_query, _from, criteria, offset, limit, sequence, flags = extract_query(sparql_query)
 
     filterless_criteria = re.sub('FILTER .*', '', criteria).strip()
-    allowed_graphs = extract_allowed_graphs(_from)
+    allowed_graphs = extract_allowed_graphs(_from, default_graph_uri)
     _from = parse_allowed_graphs(allowed_graphs)
 
     if len(sequence.strip()) > 0:
