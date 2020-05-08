@@ -11,8 +11,9 @@ jobs:
     - uses: actions/checkout@v2
     - name: Build the Docker image
       run: |
-          docker build . --file flask/docker/Dockerfile --tag myersresearchgroup/sbolexplorer:snapshot
-          docker build . --file flask/docker/Dockerfile-synbiohub --tag myersresearchgroup/sbolexplorer:snapshot-synbiohub
+          cd flask/docker
+          docker build . --file Dockerfile --tag myersresearchgroup/sbolexplorer:snapshot
+          docker build . --file Dockerfile-synbiohub --tag myersresearchgroup/sbolexplorer:snapshot-synbiohub
     - uses: azure/docker-login@v1
       with:
           username: ${{ secrets.DOCKER_USERNAME }}
