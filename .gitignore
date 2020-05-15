@@ -106,5 +106,8 @@ ENV/
 flask/dumps/*
 flask/usearch/sequences.fsa
 flask/usearch/uclust_results.uc
+flask/usearch/sbsearch_results.fsa
+flask/usearch/sbsearch_uctable.uc
+flask/usearch/searchsequence.fsa
 flask/log.txt
 flask/sbol-explorer-venv/
