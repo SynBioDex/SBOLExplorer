@@ -270,18 +270,12 @@ def get_allowed_subjects(criteria_response):
 def create_similar_criteria(criteria, clusters):
     subject = criteria.split(':', 1)[1]
 	
-    if criteria.strip() == '':
-        return ''
-
-    elif subject not in clusters or not clusters[subject]:
+    if subject not in clusters or not clusters[subject]:
         return 'FILTER (?subject != ?subject)'
 
     return 'FILTER (' + ' || '.join(['?subject = <' + duplicate + '>' for duplicate in clusters[subject]]) + ')'
 
 def create_sequence_criteria(criteria, uris):
-    if criteria.strip() == '': 
-        return ''
-
     return 'FILTER (' + ' || '.join(['?subject = <' + uri + '>' for uri in uris]) + ')'
 
 def parse_allowed_graphs(allowed_graphs):
@@ -292,6 +286,9 @@ def parse_allowed_graphs(allowed_graphs):
 
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
     es_query, _from, criteria, offset, limit, sequence, flags = extract_query(sparql_query)
+
+    if criteria == 'FILTER()':
+        criteria = ''
 
     filterless_criteria = re.sub('FILTER .*', '', criteria).strip()
     allowed_graphs = extract_allowed_graphs(_from, default_graph_uri)
