@@ -57,7 +57,7 @@ def run_uclust():
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    utils.log(str(output)
+    utils.log(str(output))
 
 
 def analyze_uclust():
