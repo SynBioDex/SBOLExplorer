@@ -140,3 +140,15 @@ def sequence_search():
     success_message = 'Successfully sequence searched.'
     utils.log(success_message)
     return success_message
+
+@app.route('/cron', methods=['POST', 'GET'])
+def update_cron_tab():
+    if request.method == 'GET':
+        utils.log('Crontab currently set to: ' + get_cron())
+        return get_cron()
+
+    params = request.get_json()
+    cron = params['cron']
+    utils.set_cron(cron)
+    
+    return 'Updated cron file.'
