@@ -137,13 +137,13 @@ def create_response(count, bindings, return_count):
         response = {"head":{"link":[],"vars":["count"]},"results":{"distinct":False,"ordered":True,"bindings":[{"count":{"type":"typed-literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"10"}}]}}
         response['results']['bindings'][0]['count']['value'] = str(count)
     else:
-        response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
+        response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type","percentMatch","strandAlignment","CIGAR"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
         response['results']['bindings'] = bindings
 
     return response
 
 
-def create_binding(subject, displayId, version, name, description, _type, order_by):
+def create_binding(subject, displayId, version, name, description, _type, order_by, percentMatch = -1, strandAlignment = 'N/A', CIGAR = 'N/A'):
     binding = {}
 
     if subject is not None:
@@ -191,6 +191,27 @@ def create_binding(subject, displayId, version, name, description, _type, order_
     if order_by is not None:
         binding["order_by"] = order_by
 
+    if percentMatch != -1:
+        binding["percentMatch"] = {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": str(percentMatch)
+        }
+
+    if strandAlignment != 'N/A':
+        binding["strandAlignment"] = {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": strandAlignment
+        }
+
+    if CIGAR != 'N/A':
+        binding["CIGAR"] = {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": CIGAR
+        }
+
     return binding
 
 
@@ -231,7 +252,7 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
     return bindings
 
 
-def create_criteria_bindings(criteria_response, uri2rank):
+def create_criteria_bindings(criteria_response, uri2rank, sequence_search = False):
     bindings = []
 
     for part in criteria_response:
@@ -245,16 +266,27 @@ def create_criteria_bindings(criteria_response, uri2rank):
         if part.get('type') == 'http://sbols.org/v2#Sequence':
             pagerank = pagerank / 10.0
 
-        binding = create_binding(part.get('subject'),
-                part.get('displayId'),
-                part.get('version'),
-                part.get('name'),
-                part.get('description'),
-                part.get('type'),
-                pagerank)
+        if sequence_search:
+            binding = create_binding(part.get('subject'),
+                    part.get('displayId'),
+                    part.get('version'),
+                    part.get('name'),
+                    part.get('description'),
+                    part.get('type'),
+                    pagerank, 
+                    get_percent_match(part.get('subject')), 
+                    get_strand_alignment(part.get('subject')), 
+                    get_cigar_data(part.get('subject')))
+        else:
+            binding = create_binding(part.get('subject'),
+                    part.get('displayId'),
+                    part.get('version'),
+                    part.get('name'),
+                    part.get('description'),
+                    part.get('type'),
+                    pagerank)
 
         bindings.append(binding)
-
     return bindings
 
 
@@ -306,7 +338,7 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         #pass into func -> queryparts create_sequence_criteria
         sequence_criteria = create_sequence_criteria(criteria, results)
         criteria_response = query.query_parts(_from, sequence_criteria) 
-        bindings = create_criteria_bindings(criteria_response, uri2rank)
+        bindings = create_criteria_bindings(criteria_response, uri2rank, True)
 
     elif 'SIMILAR' in criteria:
         # SIMILAR
@@ -343,3 +375,38 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
 
     return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
+def get_percent_match(uri):
+    with open('usearch/sbsearch_uctable.uc', 'r') as read:
+        uc_reader = read.read()
+        lines = uc_reader.splitlines()
+
+        for line in lines:
+            line = line.split()
+            if line[9] == uri:
+                return line[3]
+
+        return -1
+
+def get_strand_alignment(uri):
+    with open('usearch/sbsearch_uctable.uc', 'r') as read:
+        uc_reader = read.read()
+        lines = uc_reader.splitlines()
+
+        for line in lines:
+            line = line.split()
+            if line[9] == uri:
+                return line[4]
+
+        return 'N/A'
+
+def get_cigar_data(uri):
+    with open('usearch/sbsearch_uctable.uc', 'r') as read:
+        uc_reader = read.read()
+        lines = uc_reader.splitlines()
+
+        for line in lines:
+            line = line.split()
+            if line[9] == uri:
+                return line[7]
+
+        return 'N/A'
