@@ -144,8 +144,7 @@ def sequence_search():
 @app.route('/cron', methods=['POST', 'GET'])
 def update_cron_tab():
     if request.method == 'GET':
-        utils.log('Crontab currently set to: ' + get_cron())
-        return get_cron()
+        return jsonify(cron=utils.get_cron())
 
     params = request.get_json()
     cron = params['cron']

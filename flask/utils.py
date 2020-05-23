@@ -138,7 +138,6 @@ def get_cron():
 
         cron_list = file_lines[0].split(' ')
         cron_string = ' '.join(cron_list[0:5])
-        utils.log('Updated crontab to: ' + cron_string)
         return cron_string
 
 
