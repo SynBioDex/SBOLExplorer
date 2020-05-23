@@ -145,9 +145,10 @@ def sequence_search():
 def update_cron_tab():
     if request.method == 'GET':
         return jsonify(cron=utils.get_cron())
-
-    params = request.get_json()
-    cron = params['cron']
-    utils.set_cron(cron)
+    else:
+        params = request.get_json()
+        utils.log(str(params))
+        cron = params['cron']
+        utils.set_cron(cron)
     
     return 'Updated cron file.'

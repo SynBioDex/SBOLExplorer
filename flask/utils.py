@@ -3,6 +3,7 @@ import json
 import pickle
 import requests
 import datetime
+import subprocess
 from os import path
 
 config = None
@@ -137,6 +138,8 @@ def get_cron():
         file_lines = reader.splitlines()
 
         cron_list = file_lines[0].split(' ')
+        if cron_list[0] == '#':
+            return '#'
         cron_string = ' '.join(cron_list[0:5])
         return cron_string
 
@@ -149,4 +152,4 @@ def set_cron(cronString):
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    utils.log(output)
+    log(str(output))
