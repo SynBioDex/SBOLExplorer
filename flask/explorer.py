@@ -135,11 +135,12 @@ def search_by_string():
 @app.route('/sequencesearch', methods=['POST'])
 def sequence_search():
     params = request.get_json()
-    sequencesearch.write_to_fasta(params['sequence'])
-
-    success_message = 'Successfully sequence searched.'
-    utils.log(success_message)
-    return success_message
+    fileType = params['fileType']
+    sequence = params['sequence']
+    flags = params['flags']
+    jsonToSBH = sequencesearch.b64_file_search(sequence, fileType, flags)
+    utils.log('Successfully sequence searched file.')
+    return jsonify(jsonToSBH)
 
 @app.route('/cron', methods=['POST', 'GET'])
 def update_cron_tab():

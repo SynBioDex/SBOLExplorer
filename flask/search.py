@@ -93,7 +93,7 @@ def extract_query(sparql_query):
         sequence = sequence_search.group(1)
 
     flags = {}
-    flag_search = re.finditer(r'''# flag_([a-zA-Z0-9._]*): ([a-zA-Z0-9.]*)''', sparql_query)
+    flag_search = re.finditer(r'''# flag_([a-zA-Z0-9._]*): ([a-zA-Z0-9./-_]*)''', sparql_query)
     for flag in flag_search:
         flags[flag.group(1)] = flag.group(2)
 
@@ -252,7 +252,7 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
     return bindings
 
 
-def create_criteria_bindings(criteria_response, uri2rank, sequence_search = False):
+def create_criteria_bindings(criteria_response, uri2rank, sequence_search = False, ucTableName = ''):
     bindings = []
 
     for part in criteria_response:
@@ -274,9 +274,9 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search = Fals
                     part.get('description'),
                     part.get('type'),
                     pagerank, 
-                    get_percent_match(part.get('subject')), 
-                    get_strand_alignment(part.get('subject')), 
-                    get_cigar_data(part.get('subject')))
+                    get_percent_match(part.get('subject'), ucTableName), 
+                    get_strand_alignment(part.get('subject'), ucTableName), 
+                    get_cigar_data(part.get('subject'), ucTableName))
         else:
             binding = create_binding(part.get('subject'),
                     part.get('displayId'),
@@ -326,19 +326,23 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
     allowed_graphs = extract_allowed_graphs(_from, default_graph_uri)
     _from = parse_allowed_graphs(allowed_graphs)
 
-    if len(sequence.strip()) > 0:
-        if 'advancedsequencesearch' in sequence:
-            results = sequencesearch.sequence_search(flags)
-        else:
-        # send sequence search to search.py
-            sequencesearch.write_to_fasta(sequence)
-            results = sequencesearch.sequence_search(flags)
+    if 'file_search' in flags:
+        filename = str(flags['file_search'])
+        results = sequencesearch.sequence_search(flags, filename)
+        sequence_criteria = create_sequence_criteria(criteria, results)
+        criteria_response = query.query_parts(_from, sequence_criteria) 
+        bindings = create_criteria_bindings(criteria_response, uri2rank, True, filename[:-4] + '.uc')
 
+    elif len(sequence.strip()) > 0:
+        # send sequence search to search.py
+        temp_filename = sequencesearch.write_to_temp(sequence)
+        results = sequencesearch.sequence_search(flags, temp_filename)
+        
         # return new clusters here
         #pass into func -> queryparts create_sequence_criteria
         sequence_criteria = create_sequence_criteria(criteria, results)
         criteria_response = query.query_parts(_from, sequence_criteria) 
-        bindings = create_criteria_bindings(criteria_response, uri2rank, True)
+        bindings = create_criteria_bindings(criteria_response, uri2rank, True, temp_filename[:-4] + '.uc')
 
     elif 'SIMILAR' in criteria:
         # SIMILAR
@@ -375,8 +379,8 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
 
     return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
-def get_percent_match(uri):
-    with open('usearch/sbsearch_uctable.uc', 'r') as read:
+def get_percent_match(uri, ucTableName):
+    with open(ucTableName, 'r') as read:
         uc_reader = read.read()
         lines = uc_reader.splitlines()
 
@@ -387,8 +391,8 @@ def get_percent_match(uri):
 
         return -1
 
-def get_strand_alignment(uri):
-    with open('usearch/sbsearch_uctable.uc', 'r') as read:
+def get_strand_alignment(uri, ucTableName):
+    with open(ucTableName, 'r') as read:
         uc_reader = read.read()
         lines = uc_reader.splitlines()
 
@@ -399,8 +403,8 @@ def get_strand_alignment(uri):
 
         return 'N/A'
 
-def get_cigar_data(uri):
-    with open('usearch/sbsearch_uctable.uc', 'r') as read:
+def get_cigar_data(uri, ucTableName):
+    with open(ucTableName, 'r') as read:
         uc_reader = read.read()
         lines = uc_reader.splitlines()
 
