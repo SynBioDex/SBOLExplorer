@@ -13,7 +13,7 @@ import search
 import utils
 import query
 import sequencesearch
-
+import requests
 
 
 log = logging.getLogger('werkzeug')
@@ -25,7 +25,10 @@ app = Flask(__name__)
 @app.before_first_request
 def startup():
     utils.log('SBOLExplorer started :)')
-
+    es_indices = requests.get(utils.get_config()['elasticsearch_endpoint'] + '_cat/indices?format=json').json()
+    if (es_indices[0] is None):
+        utils.log('Index not found, creating new index.')
+        requests.get(request.url_root + '/update')
 
 @app.errorhandler(Exception)
 def handle_error(e):
