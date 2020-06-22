@@ -65,9 +65,18 @@ def run_vsearch_exact(fileName):
     output = popen.stdout.read()
     print(output)
     if 'error' in output:
-
+        raise Exception("Sequence search failed.")
 
 def append_flags_to_args(argsList, flags):
+    """Append user flags to VSEARCH command line args
+        
+    Arguments:
+        argsList {list} -- args to appen flags onto
+        flags {dict} -- flags with outpins
+    
+    Returns:
+        list -- modified command to be sent to VSEARCH
+    """
     for flag in flags:
         argsList.append("--" + flag)
         argsList.append(flags[flag])
