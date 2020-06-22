@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 
-import traceback
+from flask import Flask, request, jsonify, abort
+from werkzeug.exceptions import HTTPException
 
-from flask import Flask
-from flask import request
-from flask import jsonify
+import traceback
 import logging
 import cluster
 import pagerank
@@ -21,6 +20,15 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
+@app.errorhandler(Exception)
+def handle_error(e):
+    utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
+
+    if isinstance(e, HTTPException):
+        return jsonify(error=str(e.name + ": " + e.description)), e.code
+    else:
+        return jsonify(error=str(type(e).__name__ + e)), 500
+    
 
 @app.before_first_request
 def startup():
@@ -29,11 +37,6 @@ def startup():
     if (es_indices[0] is None):
         utils.log('Index not found, creating new index.')
         requests.get(request.url_root + '/update')
-
-@app.errorhandler(Exception)
-def handle_error(e):
-    utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
-    return jsonify(error=str(e)), 500
 
 
 @app.route('/info', methods=['GET'])
@@ -118,32 +121,28 @@ def incremental_remove_collection():
 
 @app.route('/', methods=['GET'])
 def sparql_search_endpoint():
-    sparql_query = request.args.get('query')
-    default_graph_uri = request.args.get('default-graph-uri')
-    response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
+    try:
+        sparql_query = request.args.get('query')
+        default_graph_uri = request.args.get('default-graph-uri')
+        response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
 
-    utils.log('Successfully sparql searched')
-    return response
+        utils.log('Successfully sparql searched')
+        return response
+    except:
+        raise HTTPException.InternalServerError()
 
 
 @app.route('/search', methods=['GET'])
 def search_by_string():
-    query = request.args.get('query')
+    try:
+        query = request.args.get('query')
 
-    response = jsonify(search.search_es(query)['hits'])
+        response = jsonify(search.search_es(query)['hits'])
 
-    utils.log('Successfully string searched')
-    return response
-
-@app.route('/sequencesearch', methods=['POST'])
-def sequence_search():
-    params = request.get_json()
-    fileType = params['fileType']
-    sequence = params['sequence']
-    flags = params['flags']
-    jsonToSBH = sequencesearch.b64_file_search(sequence, fileType, flags)
-    utils.log('Successfully sequence searched file.')
-    return jsonify(jsonToSBH)
+        utils.log('Successfully string searched')
+        return response
+    except:
+        raise HTTPException.InternalServerError()
 
 @app.route('/cron', methods=['POST', 'GET'])
 def update_cron_tab():
