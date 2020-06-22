@@ -9,7 +9,7 @@ import base64
 import tempfile
 
 
-
+# handling selection of VSEARCH binary
 if platform == "linux" or platform == "linux2":
     vsearch_binary_filename = 'usearch/vsearch_linux'
 elif platform == "darwin":
@@ -22,6 +22,14 @@ globalFlags = {'maxaccepts': '50', 'id': '0.8', 'iddef': '2', 'maxrejects': '0',
 exactFlags = {}
 
 def write_to_temp(sequence):
+    """Writes text sequence to temp FASTA file for search
+    
+    Arguments:
+        sequence {string} -- Sequence to write to file
+    
+    Returns:
+        string -- file path
+    """
     temp = tempfile.NamedTemporaryFile(suffix=".fsa",delete=False)
     with open(temp.name, 'w') as f:
         f.write('>sequence_to_search\n')
@@ -30,6 +38,11 @@ def write_to_temp(sequence):
 
 # pass in the sequence to this function, replace searchsequence.fsa with the query sequence
 def run_vsearch_global(fileName):
+    """Runs the "usearch_global" command
+    
+    Arguments:
+        fileName {string} -- Path to file
+    """
     # setting maxaccepts to 0 disables the limit (searches for all possible matches)
     args = [vsearch_binary_filename, '--usearch_global', fileName, '--db', 'usearch/sequences.fsa','--uc', fileName[:-4] + '.uc', '--uc_allhits',]
     args = append_flags_to_args(args, globalFlags)
@@ -39,6 +52,11 @@ def run_vsearch_global(fileName):
     print(output)
 
 def run_vsearch_exact(fileName):
+    """Runs the "search_exact" command
+    
+    Arguments:
+        fileName {string} -- Path to file
+    """
     # setting maxaccepts to 0 disables the limit (searches for all possible matches)
     args = [vsearch_binary_filename, '--search_exact', fileName, '--db', 'usearch/sequences.fsa','--uc', fileName[:-4] + '.uc', '--uc_allhits']
     args = append_flags_to_args(args, exactFlags)
@@ -46,6 +64,8 @@ def run_vsearch_exact(fileName):
     popen.wait()
     output = popen.stdout.read()
     print(output)
+    if 'error' in output:
+
 
 def append_flags_to_args(argsList, flags):
     for flag in flags:
@@ -54,18 +74,41 @@ def append_flags_to_args(argsList, flags):
     return argsList
 
 def add_global_flags(userFlags):
+    """Adds flags to global search
+    
+    Arguments:
+        userFlags {dict} -- flags selected by user
+    """
     for flag in userFlags:
         if flag in globalFlags:
             globalFlags[flag] = userFlags[flag]
 
 
 def add_exact_flags(userFlags):
+    """Adds flags to exact search
+    
+    [description]
+    
+    Arguments:
+        userFlags {dict} -- flags selected by user
+    """
     for flag in userFlags:
         if flag in exactFlags:
             exactFlags[flag] = userFlags[flag]
 
 
 def sequence_search(userFlags, fileName):
+    """Main method
+    
+    Handles all search queries
+    
+    Arguments:
+        userFlags {dict} -- flags selected by user
+        fileName {string} -- path to temp file
+    
+    Returns:
+        set -- search results by URI
+    """
     utils.log('Starting sequence search')
 
     if "search_exact" in userFlags:
