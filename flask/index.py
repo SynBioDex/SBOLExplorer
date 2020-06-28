@@ -60,11 +60,12 @@ def bulk_index_parts(parts_response, index_name):
         actions.append(action)
 
     utils.log('Bulk indexing')
-    stats = helpers.bulk(utils.get_es(), actions)
-    if len(stats[1]) == 0:
+    try:
+        stats = helpers.bulk(utils.get_es(), actions)
         utils.log('Bulk indexing complete')
-    else:
-        utils.log('[Error] Error_messages: ' + '\n'.join(stats[1]))
+    except:
+        utils.log('[ERROR] Error_messages: ' + '\n'.join(stats[1]))
+        raise Exception("Bulk indexing failed")
 
 
 def update_index(uri2rank):
