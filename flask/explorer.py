@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 
-import traceback
+from flask import Flask, request, jsonify, abort
+from werkzeug.exceptions import HTTPException
 
-from flask import Flask
-from flask import request
-from flask import jsonify
+import traceback
 import logging
 import cluster
 import pagerank
@@ -21,19 +20,23 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
+@app.errorhandler(Exception)
+def handle_error(e):
+    utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
+
+    if isinstance(e, HTTPException):
+        return jsonify(error=str(e.name + ": " + e.description)), e.code
+    else:
+        return jsonify(error=str(type(e).__name__) + str(e)), 500
+    
 
 @app.before_first_request
 def startup():
     utils.log('SBOLExplorer started :)')
-    es_indices = requests.get(utils.get_config()['elasticsearch_endpoint'] + '_cat/indices?format=json').json()
-    if (es_indices[0] is None):
+    es_indices = utils.get_es().indices.exists(index='part')
+    if (es_indices is False):
         utils.log('Index not found, creating new index.')
         requests.get(request.url_root + '/update')
-
-@app.errorhandler(Exception)
-def handle_error(e):
-    utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
-    return jsonify(error=str(e)), 500
 
 
 @app.route('/info', methods=['GET'])
@@ -55,95 +58,110 @@ def config():
 
 @app.route('/update', methods=['GET'])
 def update():
-    subject = request.args.get('subject')
+    try:
+        subject = request.args.get('subject')
 
-    if subject is None:
-        utils.save_update_start_time()
+        if subject is None:
+            utils.save_update_start_time()
 
-        clusters = cluster.update_clusters()
-        utils.save_clusters(clusters)
-        
-        
-        uri2rank = pagerank.update_pagerank()
-        utils.save_uri2rank(uri2rank)
+            clusters = cluster.update_clusters()
+            utils.save_clusters(clusters)
+            
+            
+            uri2rank = pagerank.update_pagerank()
+            utils.save_uri2rank(uri2rank)
 
-        index.update_index(utils.get_uri2rank())
-        
-        query.memoized_query_sparql.cache_clear()
-        utils.log('Cache cleared')
+            index.update_index(utils.get_uri2rank())
+            
+            query.memoized_query_sparql.cache_clear()
+            utils.log('Cache cleared')
 
-        utils.save_update_end_time()
-        success_message = 'Successfully updated entire index'
-    else:
-        index.refresh_index(subject, utils.get_uri2rank())
-        success_message = 'Successfully refreshed: ' + subject
+            utils.save_update_end_time()
+            success_message = 'Successfully updated entire index'
+        else:
+            index.refresh_index(subject, utils.get_uri2rank())
+            success_message = 'Successfully refreshed: ' + subject
 
-    utils.log(success_message)
-    return success_message
+        utils.log(success_message)
+        return success_message
+    except:
+        raise
 
 
 @app.route('/incrementalupdate', methods=['POST'])
 def incremental_update():
-    updates = request.get_json()
+    try:
+        updates = request.get_json()
 
-    index.incremental_update(updates, utils.get_uri2rank())
+        index.incremental_update(updates, utils.get_uri2rank())
 
-    success_message = 'Successfully incrementally updated parts'
-    utils.log(success_message)
-    return success_message
+        success_message = 'Successfully incrementally updated parts'
+        utils.log(success_message)
+        return 
+    except:
+        raise
 
 
 @app.route('/incrementalremove', methods=['GET'])
 def incremental_remove():
-    subject = request.args.get('subject')
+    try:
+        subject = request.args.get('subject')
 
-    index.incremental_remove(subject)
+        index.incremental_remove(subject)
 
-    success_message = 'Successfully incrementally removed: ' + subject
-    utils.log(success_message)
-    return success_message
-
+        success_message = 'Successfully incrementally removed: ' + subject
+        utils.log(success_message)
+        return success_message
+    except:
+        raise
 
 @app.route('/incrementalremovecollection', methods=['GET'])
 def incremental_remove_collection():
-    subject = request.args.get('subject')
-    uri_prefix = request.args.get('uriPrefix')
+    try:
+        subject = request.args.get('subject')
+        uri_prefix = request.args.get('uriPrefix')
 
-    index.incremental_remove_collection(subject, uri_prefix)
+        index.incremental_remove_collection(subject, uri_prefix)
 
-    success_message = 'Successfully incrementally removed collection and members: ' + subject
-    utils.log(success_message)
-    return success_message
+        success_message = 'Successfully incrementally removed collection and members: ' + subject
+        utils.log(success_message)
+        return success_message
+    except:
+        raise
 
 
 @app.route('/', methods=['GET'])
 def sparql_search_endpoint():
-    sparql_query = request.args.get('query')
-    default_graph_uri = request.args.get('default-graph-uri')
-    response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
+    try:
+        # make sure index is built, or throw exception
+        if utils.get_es().indices.exists(index='part') is False or utils.get_es().cat.indices(format='json')[0]['health'] != 'yellow':
+            abort(503)
 
-    utils.log('Successfully sparql searched')
-    return response
+        sparql_query = request.args.get('query')
+        default_graph_uri = request.args.get('default-graph-uri')
+        response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
+
+        utils.log('Successfully sparql searched')
+        return response
+    except:
+        raise
 
 
 @app.route('/search', methods=['GET'])
 def search_by_string():
-    query = request.args.get('query')
+    try:
+        if utils.get_es().indices.exists(index='part') is False or utils.get_es().cat.indices(format='json')[0]['health'] != 'yellow':
+            abort(503)
 
-    response = jsonify(search.search_es(query)['hits'])
+        query = request.args.get('query')
 
-    utils.log('Successfully string searched')
-    return response
+        response = jsonify(search.search_es(query)['hits'])
 
-@app.route('/sequencesearch', methods=['POST'])
-def sequence_search():
-    params = request.get_json()
-    fileType = params['fileType']
-    sequence = params['sequence']
-    flags = params['flags']
-    jsonToSBH = sequencesearch.b64_file_search(sequence, fileType, flags)
-    utils.log('Successfully sequence searched file.')
-    return jsonify(jsonToSBH)
+        utils.log('Successfully string searched')
+        return response
+    except:
+        raise
+
 
 @app.route('/cron', methods=['POST', 'GET'])
 def update_cron_tab():

@@ -319,7 +319,7 @@ def parse_allowed_graphs(allowed_graphs):
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
     es_query, _from, criteria, offset, limit, sequence, flags = extract_query(sparql_query)
 
-    if criteria == 'FILTER()':
+    if criteria.strip() == 'FILTER ()':
         criteria = ''
 
     filterless_criteria = re.sub('FILTER .*', '', criteria).strip()

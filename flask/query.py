@@ -52,6 +52,7 @@ def query_sparql(query):
             results.extend(page_query(query, endpoint))
         except:
             utils.log('[ERROR] failed querying:' + endpoint)
+            raise Exception("Endpoint not responding")
 
     return deduplicate_results(results)
 
@@ -118,12 +119,11 @@ def send_query(query, endpoint):
     try:
         r = requests.get(url, headers=headers)
     except Exception as e:
-        utils.log("[Error] exception when connecting: " + str(e))
-        if endpoint == utils.get_config()['sparql_endpoint']:
-            raise Exception("Local SynBioHub isn't responding")
+        utils.log("[ERROR] exception when connecting: " + str(e))
+        raise Exception("Local SynBioHub isn't responding")
 
     if r.status_code != 200:
-        utils.log('[Error] Got status code when querying: ' + str(r.status_code))
+        utils.log('[ERROR] Got status code when querying: ' + str(r.status_code))
         utils.log(r.text)
         raise Exception(url + ' is not responding')
 
