@@ -72,7 +72,7 @@ def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
     utils.log('Query for parts')
-    parts_response = query.query_parts()
+    parts_response = query.query_parts(indexing = True)
     utils.log('Query for parts complete')
 
     add_pagerank(parts_response, uri2rank)
@@ -104,7 +104,7 @@ def index_part(part):
 def refresh_index(subject, uri2rank):
     delete_subject(subject)
 
-    part_response = query.query_parts('', 'FILTER (?subject = <' + subject + '>)')
+    part_response = query.query_parts('', 'FILTER (?subject = <' + subject + '>)', True)
 
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)

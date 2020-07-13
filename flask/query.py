@@ -6,7 +6,7 @@ import utils
 import re
 
 
-def query_parts(_from = '', criteria = ''):
+def query_parts(_from = '', criteria = '', indexing = False):
     query = '''
     SELECT DISTINCT
         ?subject
@@ -20,8 +20,7 @@ def query_parts(_from = '', criteria = ''):
     WHERE {
     ''' + criteria + '''
         ?subject a ?type .
-        ?subject sbh:topLevel ?subject .
-        GRAPH ?graph { ?subject ?a ?t } .
+        ?subject sbh:topLevel ?subject .''' + ('''\n    GRAPH ?graph { ?subject ?a ?t } .''' if indexing else "") + '''
         OPTIONAL { ?subject sbol2:displayId ?displayId . }
         OPTIONAL { ?subject sbol2:version ?version . }
         OPTIONAL { ?subject dcterms:title ?name . }
