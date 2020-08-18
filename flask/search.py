@@ -8,6 +8,15 @@ import sequencesearch
 import cluster
 
 def search_es(es_query):
+    """
+    String query for ES searches
+    
+    Arguments:
+        es_query {string} -- String to search for
+    
+    Returns:
+        List -- List of all search results
+    """
     body = {
         'query': {
             'function_score': {
@@ -16,7 +25,7 @@ def search_es(es_query):
                         'query': es_query,
                         'fields': [
                             'subject',
-                            'displayId^3',
+                            'displayId^3', # caret indicates displayId is 3 times as important during search
                             'version',
                             'name',
                             'description',
@@ -41,6 +50,17 @@ def search_es(es_query):
 
 
 def empty_search_es(offset, limit, allowed_graphs):
+    """
+    Empty string search based solely on pagerank
+    
+    Arguments:
+        offset {int} -- Offset for search results
+        limit {int} -- Size of search
+        allowed_graphs {List} -- List of allowed graphs to search on
+    
+    Returns:
+        List -- List of search results
+    """
     if len(allowed_graphs) == 1:
         query = { 'term': { 'graph': allowed_graphs[0] } }
     else:
@@ -64,6 +84,15 @@ def empty_search_es(offset, limit, allowed_graphs):
 
 
 def extract_query(sparql_query):
+    """
+    Extracts information from SPARQL query to be passed to ES
+    
+    Arguments:
+        sparql_query {string} -- SPARQL query
+    
+    Returns:
+        List -- List of information extracted
+    """
     _from = ''
     if is_count_query(sparql_query):
         _from_search = re.search(r'''SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {''', sparql_query)
@@ -107,6 +136,16 @@ def extract_query(sparql_query):
 
 
 def extract_allowed_graphs(_from, default_graph_uri):
+    """
+    Extracts the allowed graphs to search over
+    
+    Arguments:
+        _from {string} -- Graph where search originated
+        default_graph_uri {string} -- The default graph URI pulled from SBH
+    
+    Returns:
+        List -- List of allowed graphs
+    """
     allowed_graphs = []
 
     if utils.get_config()['distributed_search']:
@@ -133,6 +172,17 @@ def is_count_query(sparql_query):
 
 
 def create_response(count, bindings, return_count):
+    """
+    Creates response to be sent back to SBH
+    
+    Arguments:
+        count {int} -- ?
+        bindings {Dict} -- The bindings
+        return_count {int} -- ?
+    
+    Returns:
+        ? -- ?
+    """
     if return_count:
         response = {"head":{"link":[],"vars":["count"]},"results":{"distinct":False,"ordered":True,"bindings":[{"count":{"type":"typed-literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"10"}}]}}
         response['results']['bindings'][0]['count']['value'] = str(count)
@@ -143,7 +193,28 @@ def create_response(count, bindings, return_count):
     return response
 
 
-def create_binding(subject, displayId, version, name, description, _type, order_by, percentMatch = -1, strandAlignment = 'N/A', CIGAR = 'N/A'):
+def create_binding(subject, displayId, version, name, description, _type, role, sbol_type, order_by, percentMatch = -1, strandAlignment = 'N/A', CIGAR = 'N/A'):
+    """
+    Creates bindings to be sent to SBH
+    
+    Arguments:
+        subject {string} -- URI of part
+        displayId {string} -- DisplayId of part
+        version {int} -- Version of part
+        name {string} -- Name of part
+        description {string} -- Description of part
+        _type {string} -- SBOL type of part
+        role {string} -- S.O. role of part
+        order_by {?} -- ?
+    
+    Keyword Arguments:
+        percentMatch {number} -- Percent match of query part to the target part (default: {-1})
+        strandAlignment {str} -- Strand alignment of the query part relatve to the target part (default: {'N/A'})
+        CIGAR {str} -- Alignment of query part relative to the target part (default: {'N/A'})
+    
+    Returns:
+        Dict -- Part and its information
+    """
     binding = {}
 
     if subject is not None:
@@ -188,8 +259,22 @@ def create_binding(subject, displayId, version, name, description, _type, order_
             "value": _type
         }
 
+    if role is not None:
+        binding["role"] = {
+            "type": "uri",
+            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
+            "value": role
+        }
+
     if order_by is not None:
         binding["order_by"] = order_by
+
+    if sbol_type is not None:
+        binding["sboltype"] = {
+            "type": "uri",
+            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
+            "value": sbol_type
+        }
 
     if percentMatch != -1:
         binding["percentMatch"] = {
@@ -216,6 +301,20 @@ def create_binding(subject, displayId, version, name, description, _type, order_
 
 
 def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = None):
+    """
+    Creates the mass binding consisting of all parts in the search
+    
+    Arguments:
+        es_response {Dict} -- List of all responses from ES
+        clusters {?} -- ?
+        allowed_graphs {List} -- List of allowed graphs
+    
+    Keyword Arguments:
+        allowed_subjects {List} -- List of allowed subjects (default: {None})
+    
+    Returns:
+        Dict -- All parts and their corresponding information
+    """
     bindings = []
 
     cluster_duplicates = set()
@@ -245,6 +344,8 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
                 _source.get('name'),
                 _source.get('description'),
                 _source.get('type'),
+                _source.get('role'),
+                _source.get('sboltype'),
                 _score)
 
         bindings.append(binding)
@@ -253,6 +354,20 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
 
 
 def create_criteria_bindings(criteria_response, uri2rank, sequence_search = False, ucTableName = ''):
+    """
+    Creates binding for all non-string or non-empty searches
+    
+    Arguments:
+        criteria_response {Dict} -- List of parts and their information
+        uri2rank {Dict} -- Pagerank information
+    
+    Keyword Arguments:
+        sequence_search {bool} -- Whether to sequence search (default: {False})
+        ucTableName {str} -- Name of UC table in Explorer's filesystem (default: {''})
+    
+    Returns:
+        Dict -- Binding of parts
+    """
     bindings = []
 
     for part in criteria_response:
@@ -273,6 +388,8 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search = Fals
                     part.get('name'),
                     part.get('description'),
                     part.get('type'),
+                    part.get('role'),
+                    part.get('sboltype'),
                     pagerank, 
                     get_percent_match(part.get('subject'), ucTableName), 
                     get_strand_alignment(part.get('subject'), ucTableName), 
@@ -284,6 +401,8 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search = Fals
                     part.get('name'),
                     part.get('description'),
                     part.get('type'),
+                    part.get('role'),
+                    part.get('sboltype'),
                     pagerank)
 
         bindings.append(binding)
