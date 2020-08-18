@@ -6,7 +6,7 @@ import utils
 import re
 
 
-def query_parts(_from = '', criteria = ''):
+def query_parts(_from = '', criteria = '', indexing = False):
     query = '''
     SELECT DISTINCT
         ?subject
@@ -16,16 +16,19 @@ def query_parts(_from = '', criteria = ''):
         ?description
         ?type
         ?graph
+        ?role
+        ?sboltype
     ''' + _from + '''
     WHERE {
     ''' + criteria + '''
         ?subject a ?type .
-        ?subject sbh:topLevel ?subject .
-        GRAPH ?graph { ?subject ?a ?t } .
+        ?subject sbh:topLevel ?subject .''' + ('''\n    GRAPH ?graph { ?subject ?a ?t } .''' if indexing else "") + '''
         OPTIONAL { ?subject sbol2:displayId ?displayId . }
         OPTIONAL { ?subject sbol2:version ?version . }
         OPTIONAL { ?subject dcterms:title ?name . }
         OPTIONAL { ?subject dcterms:description ?description . }
+        OPTIONAL { ?subject sbol2:role ?role . }
+        OPTIONAL { ?subject sbol2:type ?sboltype . }
     } 
     '''
 
@@ -52,6 +55,7 @@ def query_sparql(query):
             results.extend(page_query(query, endpoint))
         except:
             utils.log('[ERROR] failed querying:' + endpoint)
+            raise Exception("Endpoint not responding")
 
     return deduplicate_results(results)
 
@@ -118,12 +122,11 @@ def send_query(query, endpoint):
     try:
         r = requests.get(url, headers=headers)
     except Exception as e:
-        utils.log("[Error] exception when connecting: " + str(e))
-        if endpoint == utils.get_config()['sparql_endpoint']:
-            raise Exception("Local SynBioHub isn't responding")
+        utils.log("[ERROR] exception when connecting: " + str(e))
+        raise Exception("Local SynBioHub isn't responding")
 
     if r.status_code != 200:
-        utils.log('[Error] Got status code when querying: ' + str(r.status_code))
+        utils.log('[ERROR] Got status code when querying: ' + str(r.status_code))
         utils.log(r.text)
         raise Exception(url + ' is not responding')
 

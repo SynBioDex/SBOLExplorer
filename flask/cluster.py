@@ -29,7 +29,6 @@ else:
     print("Sorry, your OS is not supported for sequence based-search.")
 
 uclust_results_filename = 'usearch/uclust_results.uc'
-test_results = 'usearch/sbsearch_uctable.uc'
 
 sequence_query = '''
 SELECT ?subject ?sequence
@@ -88,10 +87,10 @@ def analyze_uclust():
         utils.log('average hit identity: ' + str(total_identity / hits))
 
 
-def uclust2uris():
+def uclust2uris(fileName):
     uris = set()
     
-    f = open(test_results, 'r')
+    f = open(fileName, 'r')
     results = f.read()
     lines = results.splitlines()
 
