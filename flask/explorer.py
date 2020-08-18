@@ -21,11 +21,16 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
+def auto_update_index():
+    while utils.get_config()['autoUpdateIndex']:
+        sleep(int(utils.get_config()['updateTimeInDays']) * 86400)
+        utils.log('Updating index automatically. To disable, set the \"autoUpdateIndex\" property in config.json to false.')
+        
 
 @app.before_first_request
 def startup():
     utils.log('SBOLExplorer started :)')
-
+    auto_update_index()
 
 @app.errorhandler(Exception)
 def handle_error(e):
@@ -116,11 +121,14 @@ def incremental_remove_collection():
 @app.route('/', methods=['GET'])
 def sparql_search_endpoint():
     sparql_query = request.args.get('query')
-    default_graph_uri = request.args.get('default-graph-uri')
-    response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
 
-    utils.log('Successfully sparql searched')
-    return response
+    if sparql_query is not None:
+        default_graph_uri = request.args.get('default-graph-uri')
+        response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
+
+        utils.log('Successfully sparql searched')
+        return response
+    return "Welcome to SBOLExplorer!"
 
 
 @app.route('/search', methods=['GET'])
@@ -140,15 +148,3 @@ def sequence_search():
     success_message = 'Successfully sequence searched.'
     utils.log(success_message)
     return success_message
-
-@app.route('/cron', methods=['POST', 'GET'])
-def update_cron_tab():
-    if request.method == 'GET':
-        return jsonify(cron=utils.get_cron())
-    else:
-        params = request.get_json()
-        utils.log(str(params))
-        cron = params['cron']
-        utils.set_cron(cron)
-    
-    return 'Updated cron file.'

@@ -131,25 +131,4 @@ def deserialize(filename):
     data = pickle.load(f)
     f.close()
     return data
-
-def get_cron():
-    with open('update.cron', 'r') as f:
-        reader = f.read()
-        file_lines = reader.splitlines()
-
-        cron_list = file_lines[0].split(' ')
-        if cron_list[0] == '#':
-            return '#'
-        cron_string = ' '.join(cron_list[0:5])
-        return cron_string
-
-
-def set_cron(cronString):
-    with open('update.cron', 'w') as f:
-        f.write(cronString + ' curl -X GET "localhost:13162/update" >> /tmp/update.cron.output')
-        
-    args = ['crontab', 'update.cron']
-    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
-    popen.wait()
-    output = popen.stdout.read()
-    log(str(output))
+    
