@@ -1,9 +1,18 @@
 from elasticsearch import helpers
 import utils
 import query
+import json
 
 
 def add_pagerank(parts_response, uri2rank):
+    """
+    Adds the pagerank score for each part
+
+    Arguments:
+        parts_response {List} -- List containing all parts from the SPARQL query
+        uri2rank {List} -- List of each part and its calculated pagerank score
+    """
+
     for part in parts_response:
         subject = part['subject']
 
@@ -14,6 +23,13 @@ def add_pagerank(parts_response, uri2rank):
 
 
 def add_keywords(parts_response):
+    """
+    Adds the displayId to the 'keyword' category
+    
+    Arguments:
+        parts_response {List} -- List containing all parts from the SPARQL query
+    """
+
     for part in parts_response:
         keywords = []
 
@@ -23,8 +39,61 @@ def add_keywords(parts_response):
 
         part['keywords'] = ' '.join(keywords)
 
+def add_roles(parts_response):
+    """
+    Adds the synonyms from the SO-Ontologies list to each part's keyword category 
+        
+    Arguments:
+        parts_response {List} -- List containing all parts from the SPARQL query
+    """
+    with open('so-simplified.json','r') as so_json:
+        term_list = json.load(so_json)
+
+        for part in parts_response: 
+            role = part.get('role')
+            
+            if role is not None and 'identifiers.org' in role:
+                keywords_list = []
+                so_term = role[-10:]
+                so_term = so_term.replace(':','_')
+
+                for term in term_list:
+                    if so_term in term['id']:
+                        keywords_list.append(term['lbl'])
+
+                        if 'synonyms' in term and term['synonyms'] is not None:
+                            for synonym in term['synonyms']:
+
+                                # remove the annoying header from the synonyms
+                                if 'INSDC' in synonym:
+                                    synonym = synonym.replace('INSDC_qualifier:', '')
+
+                                if synonym not in keywords_list:
+                                    keywords_list.append(synonym)
+                                
+                for keyword in keywords_list:           
+                    part['keywords'] += ' ' + keyword
+
+def add_sbol_type(parts_response):
+    for part in parts_response:
+        sbol_type = part.get('sboltype')
+
+        if sbol_type is not None and 'http://www.biopax.org/release/biopax-level3.owl#' in sbol_type:
+            type = sbol_type[48:]
+
+            if 'region' in type:
+                type = type.replace('Region','')
+                
+            part['keywords'] += ' ' + type
 
 def create_parts_index(index_name):
+    """
+    Creates a new index
+
+    Arguments:
+        index_name {String} -- Name of the new index
+    """
+
     if utils.get_es().indices.exists(index_name):
         utils.log('Index already exists -> deleting')
         utils.get_es().indices.delete(index=index_name)
@@ -48,6 +117,17 @@ def create_parts_index(index_name):
 
 
 def bulk_index_parts(parts_response, index_name):
+    """
+    Adds each part as a document to the index
+    
+    Arguments:
+        parts_response {List} -- List containing all parts from the SPARQL query
+        index_name {String} -- Name of the index
+    
+    Raises:
+        Exception -- Indexing fails
+    """
+
     actions = []
     for i in range(len(parts_response)):
         action = {
@@ -60,22 +140,26 @@ def bulk_index_parts(parts_response, index_name):
         actions.append(action)
 
     utils.log('Bulk indexing')
-    stats = helpers.bulk(utils.get_es(), actions)
-    if len(stats[1]) == 0:
+    try:
+        stats = helpers.bulk(utils.get_es(), actions)
         utils.log('Bulk indexing complete')
-    else:
-        utils.log('[Error] Error_messages: ' + '\n'.join(stats[1]))
+    except:
+        utils.log('[ERROR] Error_messages: ' + '\n'.join(stats[1]))
+        raise Exception("Bulk indexing failed")
 
 
 def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
     utils.log('Query for parts')
-    parts_response = query.query_parts()
+    parts_response = query.query_parts(indexing = True)
     utils.log('Query for parts complete')
 
+    utils.log('Adding parts to new index')
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
+    add_roles(parts_response)
+    add_sbol_type(parts_response)
     create_parts_index(index_name)
     bulk_index_parts(parts_response, index_name)
 
@@ -103,7 +187,7 @@ def index_part(part):
 def refresh_index(subject, uri2rank):
     delete_subject(subject)
 
-    part_response = query.query_parts('', 'FILTER (?subject = <' + subject + '>)')
+    part_response = query.query_parts('', 'FILTER (?subject = <' + subject + '>)', True)
 
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)

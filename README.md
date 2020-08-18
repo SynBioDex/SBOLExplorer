@@ -37,6 +37,6 @@ Activate this virtualenv using the command `source sbol-explorer-venv/bin/activa
 Navigate into the `flask` directory. Run the command `pip install -r requirements.txt` to install all of the necessary Python packages for the validator. You should now be able to start SBOLExplorer by running the start.sh script using the `./start.sh` command.
 
 # Automatic build and deploy
-On each commit to master, a new Docker image is built and pushed to [Docker Hub](https://hub.docker.com/r/michael13162/sbolexplore://hub.docker.com/r/michael13162/sbolexplorer). 
+On each commit to master, a new Docker image is built and pushed to [Docker Hub](https://hub.docker.com/r/michael13162/sbolexplorer). 
 This is done by TravisCI.
 The credentials used to push the image are stored in Travis. 

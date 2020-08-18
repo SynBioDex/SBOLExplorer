@@ -8,6 +8,15 @@ import sequencesearch
 import cluster
 
 def search_es(es_query):
+    """
+    String query for ES searches
+    
+    Arguments:
+        es_query {string} -- String to search for
+    
+    Returns:
+        List -- List of all search results
+    """
     body = {
         'query': {
             'function_score': {
@@ -16,7 +25,7 @@ def search_es(es_query):
                         'query': es_query,
                         'fields': [
                             'subject',
-                            'displayId^3',
+                            'displayId^3', # caret indicates displayId is 3 times as important during search
                             'version',
                             'name',
                             'description',
@@ -41,6 +50,17 @@ def search_es(es_query):
 
 
 def empty_search_es(offset, limit, allowed_graphs):
+    """
+    Empty string search based solely on pagerank
+    
+    Arguments:
+        offset {int} -- Offset for search results
+        limit {int} -- Size of search
+        allowed_graphs {List} -- List of allowed graphs to search on
+    
+    Returns:
+        List -- List of search results
+    """
     if len(allowed_graphs) == 1:
         query = { 'term': { 'graph': allowed_graphs[0] } }
     else:
@@ -64,6 +84,15 @@ def empty_search_es(offset, limit, allowed_graphs):
 
 
 def extract_query(sparql_query):
+    """
+    Extracts information from SPARQL query to be passed to ES
+    
+    Arguments:
+        sparql_query {string} -- SPARQL query
+    
+    Returns:
+        List -- List of information extracted
+    """
     _from = ''
     if is_count_query(sparql_query):
         _from_search = re.search(r'''SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {''', sparql_query)
@@ -93,7 +122,7 @@ def extract_query(sparql_query):
         sequence = sequence_search.group(1)
 
     flags = {}
-    flag_search = re.finditer(r'''# flag_([a-zA-Z0-9._]*): ([a-zA-Z0-9.]*)''', sparql_query)
+    flag_search = re.finditer(r'''# flag_([a-zA-Z0-9._]*): ([a-zA-Z0-9./-_]*)''', sparql_query)
     for flag in flag_search:
         flags[flag.group(1)] = flag.group(2)
 
@@ -107,6 +136,16 @@ def extract_query(sparql_query):
 
 
 def extract_allowed_graphs(_from, default_graph_uri):
+    """
+    Extracts the allowed graphs to search over
+    
+    Arguments:
+        _from {string} -- Graph where search originated
+        default_graph_uri {string} -- The default graph URI pulled from SBH
+    
+    Returns:
+        List -- List of allowed graphs
+    """
     allowed_graphs = []
 
     if utils.get_config()['distributed_search']:
@@ -133,17 +172,49 @@ def is_count_query(sparql_query):
 
 
 def create_response(count, bindings, return_count):
+    """
+    Creates response to be sent back to SBH
+    
+    Arguments:
+        count {int} -- ?
+        bindings {Dict} -- The bindings
+        return_count {int} -- ?
+    
+    Returns:
+        ? -- ?
+    """
     if return_count:
         response = {"head":{"link":[],"vars":["count"]},"results":{"distinct":False,"ordered":True,"bindings":[{"count":{"type":"typed-literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"10"}}]}}
         response['results']['bindings'][0]['count']['value'] = str(count)
     else:
-        response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
+        response = {"head":{"link":[],"vars":["subject","displayId","version","name","description","type","percentMatch","strandAlignment","CIGAR"]},"results":{"distinct":False,"ordered":True,"bindings":[]}}
         response['results']['bindings'] = bindings
 
     return response
 
 
-def create_binding(subject, displayId, version, name, description, _type, order_by):
+def create_binding(subject, displayId, version, name, description, _type, role, sbol_type, order_by, percentMatch = -1, strandAlignment = 'N/A', CIGAR = 'N/A'):
+    """
+    Creates bindings to be sent to SBH
+    
+    Arguments:
+        subject {string} -- URI of part
+        displayId {string} -- DisplayId of part
+        version {int} -- Version of part
+        name {string} -- Name of part
+        description {string} -- Description of part
+        _type {string} -- SBOL type of part
+        role {string} -- S.O. role of part
+        order_by {?} -- ?
+    
+    Keyword Arguments:
+        percentMatch {number} -- Percent match of query part to the target part (default: {-1})
+        strandAlignment {str} -- Strand alignment of the query part relatve to the target part (default: {'N/A'})
+        CIGAR {str} -- Alignment of query part relative to the target part (default: {'N/A'})
+    
+    Returns:
+        Dict -- Part and its information
+    """
     binding = {}
 
     if subject is not None:
@@ -188,13 +259,62 @@ def create_binding(subject, displayId, version, name, description, _type, order_
             "value": _type
         }
 
+    if role is not None:
+        binding["role"] = {
+            "type": "uri",
+            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
+            "value": role
+        }
+
     if order_by is not None:
         binding["order_by"] = order_by
+
+    if sbol_type is not None:
+        binding["sboltype"] = {
+            "type": "uri",
+            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
+            "value": sbol_type
+        }
+
+    if percentMatch != -1:
+        binding["percentMatch"] = {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": str(percentMatch)
+        }
+
+    if strandAlignment != 'N/A':
+        binding["strandAlignment"] = {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": strandAlignment
+        }
+
+    if CIGAR != 'N/A':
+        binding["CIGAR"] = {
+            "type": "literal",
+            "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            "value": CIGAR
+        }
 
     return binding
 
 
 def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = None):
+    """
+    Creates the mass binding consisting of all parts in the search
+    
+    Arguments:
+        es_response {Dict} -- List of all responses from ES
+        clusters {?} -- ?
+        allowed_graphs {List} -- List of allowed graphs
+    
+    Keyword Arguments:
+        allowed_subjects {List} -- List of allowed subjects (default: {None})
+    
+    Returns:
+        Dict -- All parts and their corresponding information
+    """
     bindings = []
 
     cluster_duplicates = set()
@@ -224,6 +344,8 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
                 _source.get('name'),
                 _source.get('description'),
                 _source.get('type'),
+                _source.get('role'),
+                _source.get('sboltype'),
                 _score)
 
         bindings.append(binding)
@@ -231,7 +353,21 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
     return bindings
 
 
-def create_criteria_bindings(criteria_response, uri2rank):
+def create_criteria_bindings(criteria_response, uri2rank, sequence_search = False, ucTableName = ''):
+    """
+    Creates binding for all non-string or non-empty searches
+    
+    Arguments:
+        criteria_response {Dict} -- List of parts and their information
+        uri2rank {Dict} -- Pagerank information
+    
+    Keyword Arguments:
+        sequence_search {bool} -- Whether to sequence search (default: {False})
+        ucTableName {str} -- Name of UC table in Explorer's filesystem (default: {''})
+    
+    Returns:
+        Dict -- Binding of parts
+    """
     bindings = []
 
     for part in criteria_response:
@@ -245,16 +381,31 @@ def create_criteria_bindings(criteria_response, uri2rank):
         if part.get('type') == 'http://sbols.org/v2#Sequence':
             pagerank = pagerank / 10.0
 
-        binding = create_binding(part.get('subject'),
-                part.get('displayId'),
-                part.get('version'),
-                part.get('name'),
-                part.get('description'),
-                part.get('type'),
-                pagerank)
+        if sequence_search:
+            binding = create_binding(part.get('subject'),
+                    part.get('displayId'),
+                    part.get('version'),
+                    part.get('name'),
+                    part.get('description'),
+                    part.get('type'),
+                    part.get('role'),
+                    part.get('sboltype'),
+                    pagerank, 
+                    get_percent_match(part.get('subject'), ucTableName), 
+                    get_strand_alignment(part.get('subject'), ucTableName), 
+                    get_cigar_data(part.get('subject'), ucTableName))
+        else:
+            binding = create_binding(part.get('subject'),
+                    part.get('displayId'),
+                    part.get('version'),
+                    part.get('name'),
+                    part.get('description'),
+                    part.get('type'),
+                    part.get('role'),
+                    part.get('sboltype'),
+                    pagerank)
 
         bindings.append(binding)
-
     return bindings
 
 
@@ -287,26 +438,30 @@ def parse_allowed_graphs(allowed_graphs):
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
     es_query, _from, criteria, offset, limit, sequence, flags = extract_query(sparql_query)
 
-    if criteria == 'FILTER()':
+    if criteria.strip() == 'FILTER ()':
         criteria = ''
 
     filterless_criteria = re.sub('FILTER .*', '', criteria).strip()
     allowed_graphs = extract_allowed_graphs(_from, default_graph_uri)
     _from = parse_allowed_graphs(allowed_graphs)
 
-    if len(sequence.strip()) > 0:
-        if 'advancedsequencesearch' in sequence:
-            results = sequencesearch.sequence_search(flags)
-        else:
-        # send sequence search to search.py
-            sequencesearch.write_to_fasta(sequence)
-            results = sequencesearch.sequence_search(flags)
+    if 'file_search' in flags:
+        filename = str(flags['file_search'])
+        results = sequencesearch.sequence_search(flags, filename)
+        sequence_criteria = create_sequence_criteria(criteria, results)
+        criteria_response = query.query_parts(_from, sequence_criteria) 
+        bindings = create_criteria_bindings(criteria_response, uri2rank, True, filename[:-4] + '.uc')
 
+    elif len(sequence.strip()) > 0:
+        # send sequence search to search.py
+        temp_filename = sequencesearch.write_to_temp(sequence)
+        results = sequencesearch.sequence_search(flags, temp_filename)
+        
         # return new clusters here
         #pass into func -> queryparts create_sequence_criteria
         sequence_criteria = create_sequence_criteria(criteria, results)
         criteria_response = query.query_parts(_from, sequence_criteria) 
-        bindings = create_criteria_bindings(criteria_response, uri2rank)
+        bindings = create_criteria_bindings(criteria_response, uri2rank, True, temp_filename[:-4] + '.uc')
 
     elif 'SIMILAR' in criteria:
         # SIMILAR
@@ -343,3 +498,38 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
 
     return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
+def get_percent_match(uri, ucTableName):
+    with open(ucTableName, 'r') as read:
+        uc_reader = read.read()
+        lines = uc_reader.splitlines()
+
+        for line in lines:
+            line = line.split()
+            if line[9] == uri:
+                return line[3]
+
+        return -1
+
+def get_strand_alignment(uri, ucTableName):
+    with open(ucTableName, 'r') as read:
+        uc_reader = read.read()
+        lines = uc_reader.splitlines()
+
+        for line in lines:
+            line = line.split()
+            if line[9] == uri:
+                return line[4]
+
+        return 'N/A'
+
+def get_cigar_data(uri, ucTableName):
+    with open(ucTableName, 'r') as read:
+        uc_reader = read.read()
+        lines = uc_reader.splitlines()
+
+        for line in lines:
+            line = line.split()
+            if line[9] == uri:
+                return line[7]
+
+        return 'N/A'
