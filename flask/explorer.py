@@ -33,8 +33,8 @@ def handle_error(e):
 @app.before_first_request
 def startup():
     utils.log('SBOLExplorer started :)')
-    es_indices = utils.get_es().indices.exists(index='part')
-    if (es_indices is False):
+    es_indices = utils.get_es().indices.get(index='*,-localhost*,-.kibana')
+    if (len(es_indices) == 0):
         utils.log('Index not found, creating new index.')
         requests.get(request.url_root + '/update')
 
@@ -134,14 +134,14 @@ def incremental_remove_collection():
 def sparql_search_endpoint():
     try:
         # make sure index is built, or throw exception
-        if utils.get_es().indices.exists(index='part') is False or utils.get_es().cat.indices(format='json')[0]['health'] != 'yellow':
-            abort(503)
+        if utils.get_es().indices.exists(index='*,-localhost*,-.kibana') is False or utils.get_es().cat.indices(format='json')[0]['health'] is 'red':
+            abort(503, 'Elasticsearch is not working or the index does not exist.')
 
         sparql_query = request.args.get('query')
         default_graph_uri = request.args.get('default-graph-uri')
         response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
 
-        utils.log('Successfully sparql searched')
+        utils.log('Search complete.')
         return response
     except:
         raise
@@ -150,8 +150,8 @@ def sparql_search_endpoint():
 @app.route('/search', methods=['GET'])
 def search_by_string():
     try:
-        if utils.get_es().indices.exists(index='part') is False or utils.get_es().cat.indices(format='json')[0]['health'] != 'yellow':
-            abort(503)
+        if utils.get_es().indices.exists(index='*,-localhost*,-.kibana') is False or utils.get_es().cat.indices(format='json')[0]['health'] is 'red':
+            abort(503, 'Elasticsearch is not working or the index does not exist.')
 
         query = request.args.get('query')
 
