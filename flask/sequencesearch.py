@@ -22,7 +22,8 @@ globalFlags = {'maxaccepts': '50', 'id': '0.8', 'iddef': '2', 'maxrejects': '0',
 exactFlags = {}
 
 def write_to_temp(sequence):
-    """Writes text sequence to temp FASTA file for search
+    """
+    Writes text sequence to temp FASTA file for search
     
     Arguments:
         sequence {string} -- Sequence to write to file
@@ -38,7 +39,8 @@ def write_to_temp(sequence):
 
 # pass in the sequence to this function, replace searchsequence.fsa with the query sequence
 def run_vsearch_global(fileName):
-    """Runs the "usearch_global" command
+    """
+    Runs the "usearch_global" command
     
     Arguments:
         fileName {string} -- Path to file
@@ -52,7 +54,8 @@ def run_vsearch_global(fileName):
     print(output)
 
 def run_vsearch_exact(fileName):
-    """Runs the "search_exact" command
+    """
+    Runs the "search_exact" command
     
     Arguments:
         fileName {string} -- Path to file
@@ -67,7 +70,8 @@ def run_vsearch_exact(fileName):
 
 
 def append_flags_to_args(argsList, flags):
-    """Append user flags to VSEARCH command line args
+    """
+    Append user flags to VSEARCH command line args
         
     Arguments:
         argsList {list} -- args to appen flags onto
@@ -82,7 +86,8 @@ def append_flags_to_args(argsList, flags):
     return argsList
 
 def add_global_flags(userFlags):
-    """Adds flags to global search
+    """
+    Adds flags to global search
     
     Arguments:
         userFlags {dict} -- flags selected by user
@@ -93,7 +98,8 @@ def add_global_flags(userFlags):
 
 
 def add_exact_flags(userFlags):
-    """Adds flags to exact search
+    """
+    Adds flags to exact search
     
     [description]
     
@@ -106,7 +112,8 @@ def add_exact_flags(userFlags):
 
 
 def sequence_search(userFlags, fileName):
-    """Main method
+    """
+    Main method
     
     Handles all search queries
     

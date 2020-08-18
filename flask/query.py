@@ -16,6 +16,8 @@ def query_parts(_from = '', criteria = '', indexing = False):
         ?description
         ?type
         ?graph
+        ?role
+        ?sboltype
     ''' + _from + '''
     WHERE {
     ''' + criteria + '''
@@ -25,6 +27,8 @@ def query_parts(_from = '', criteria = '', indexing = False):
         OPTIONAL { ?subject sbol2:version ?version . }
         OPTIONAL { ?subject dcterms:title ?name . }
         OPTIONAL { ?subject dcterms:description ?description . }
+        OPTIONAL { ?subject sbol2:role ?role . }
+        OPTIONAL { ?subject sbol2:type ?sboltype . }
     } 
     '''
 
