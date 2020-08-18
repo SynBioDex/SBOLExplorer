@@ -15,8 +15,8 @@ SBOLExplorer is a service that simplifies the process of analyzing and searching
 5. Go to the SBOLExplorer/flask directory and run `pip install -r requirements.txt` to install all the dependencies.  Try `pip3` instead of `pip` if that doesn't work.
 6. Run SBOLExplorer using `./start.sh` in the SBOLExplorer/flask directory.
 7. To update the index for the first time, run `curl -X GET "localhost:13162/update"`.  Depending on repository size, this can take a couple of minutes.
-8. Optionally, run `crontab update.cron` to automatically update SBOLExplorer periodically.
-    * To change the update period, edit update.cron
+   * Note: If you want to manually rename your index name in Elasticsearch after the initial creation, make sure to change the "elasticsearch_index_name" field in the config file.
+8. Optionally, edit the "autoUpdateIndex" and "updateTimeInDays" fields in the config file to update your index automatically.
 9. In SynBioHub, go to the Admin->General page and specify `http://localhost:13162/` as the SBOLExplorer endpoint, check the `Searching Using SBOLExplorer` checkbox, and click `Save`.  Searches will now go through SBOLExplorer.
 
 ![alt text](https://raw.githubusercontent.com/michael13162/SBOLExplorer/master/visualization/network.png)
