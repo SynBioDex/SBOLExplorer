@@ -12,19 +12,15 @@ import search
 import utils
 import query
 import sequencesearch
-import requests
 
+import threading
+import time
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
-def auto_update_index():
-    while utils.get_config()['autoUpdateIndex']:
-        sleep(int(utils.get_config()['updateTimeInDays']) * 86400)
-        utils.log('Updating index automatically. To disable, set the \"autoUpdateIndex\" property in config.json to false.')
-        
 @app.errorhandler(Exception)
 def handle_error(e):
     utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
@@ -36,17 +32,28 @@ def handle_error(e):
 
 @app.before_first_request
 def startup():
+    # Method for running auto indexing
+    def auto_update_index():
+        while True:
+            if utils.get_config()['autoUpdateIndex'] and utils.get_config()['updateTimeInDays'] > 0:
+                time.sleep(int(utils.get_config()['updateTimeInDays']) * 86400)
+                utils.log('Updating index automatically. To disable, set the \"autoUpdateIndex\" property in config.json to false.')
+                update()
+
     utils.log('SBOLExplorer started :)')
-    auto_update_index()
+    # Thread for automatically updaing the index periodically
+    update_thread = threading.Thread(target=auto_update_index, daemon=True)
+    update_thread.start()
 
 @app.errorhandler(Exception)
 def handle_error(e):
     utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
     return jsonify(error=str(e)), 500
     es_indices = utils.get_es().indices.get(index='*,-localhost*,-.kibana')
+
     if (len(es_indices) == 0):
         utils.log('Index not found, creating new index.')
-        requests.get(request.url_root + '/update')
+        update()
 
 
 @app.route('/info', methods=['GET'])
