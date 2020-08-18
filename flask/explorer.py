@@ -152,10 +152,16 @@ def sparql_search_endpoint():
         if sparql_query is not None:
             default_graph_uri = request.args.get('default-graph-uri')
             response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
-            utils.log('Successfully sparql searched')
+            utils.log('Search complete.')
             return response
-
-        return "Welcome to SBOLExplorer!"
+        else:
+            return "<pre><h1>Welcome to SBOLExplorer! <br> <h2>The available indices in Elasticsearch are shown below:</h2></h1><br>"\
+            + str(utils.get_es().cat.indices(format='json'))\
+            + "<br><br><h3>The config options are set to:</h3><br>"\
+            + str(utils.get_config())\
+            + "<br><br><br><br><a href=\"https://github.com/synbiodex/sbolexplorer\">Visit our GitHub repository!</a>"\
+            + "<br><br>Any issues can be reported to our <a href=\"https://github.com/synbiodex/sbolexplorer/issues\">issue tracker.</a>"\
+            + "<br><br>Used by <a href=\"https://github.com/synbiohub/synbiohub\">SynBioHub.</a>"
     except:
         raise
 
