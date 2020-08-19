@@ -12,8 +12,9 @@ import search
 import utils
 import query
 import sequencesearch
-import requests
 
+import threading
+import time
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -28,15 +29,31 @@ def handle_error(e):
         return jsonify(error=str(e.name + ": " + e.description)), e.code
     else:
         return jsonify(error=str(type(e).__name__) + str(e)), 500
-    
 
 @app.before_first_request
 def startup():
+    # Method for running auto indexing
+    def auto_update_index():
+        while True:
+            if utils.get_config()['autoUpdateIndex'] and utils.get_config()['updateTimeInDays'] > 0:
+                time.sleep(int(utils.get_config()['updateTimeInDays']) * 86400)
+                utils.log('Updating index automatically. To disable, set the \"autoUpdateIndex\" property in config.json to false.')
+                update()
+
     utils.log('SBOLExplorer started :)')
-    
+
+    # Thread for automatically updaing the index periodically
+    update_thread = threading.Thread(target=auto_update_index, daemon=True)
+    update_thread.start()
+
+@app.errorhandler(Exception)
+def handle_error(e):
+    utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
+    return jsonify(error=str(e)), 500
+  
     if utils.get_es().indices.exists(index=utils.get_config()['elasticsearch_index_name']) is False:
         utils.log('Index not found, creating new index.')
-        requests.get(request.url_root + '/update')
+        update()
 
 
 @app.route('/info', methods=['GET'])
@@ -138,14 +155,22 @@ def sparql_search_endpoint():
             abort(503, 'Elasticsearch is not working or the index does not exist.')
 
         sparql_query = request.args.get('query')
-        default_graph_uri = request.args.get('default-graph-uri')
-        response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
 
-        utils.log('Search complete.')
-        return response
+        if sparql_query is not None:
+            default_graph_uri = request.args.get('default-graph-uri')
+            response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
+            utils.log('Search complete.')
+            return response
+        else:
+            return "<pre><h1>Welcome to SBOLExplorer! <br> <h2>The available indices in Elasticsearch are shown below:</h2></h1><br>"\
+            + str(utils.get_es().cat.indices(format='json'))\
+            + "<br><br><h3>The config options are set to:</h3><br>"\
+            + str(utils.get_config())\
+            + "<br><br><br><br><a href=\"https://github.com/synbiodex/sbolexplorer\">Visit our GitHub repository!</a>"\
+            + "<br><br>Any issues can be reported to our <a href=\"https://github.com/synbiodex/sbolexplorer/issues\">issue tracker.</a>"\
+            + "<br><br>Used by <a href=\"https://github.com/synbiohub/synbiohub\">SynBioHub.</a>"
     except:
         raise
-
 
 @app.route('/search', methods=['GET'])
 def search_by_string():
@@ -161,16 +186,3 @@ def search_by_string():
         return response
     except:
         raise
-
-
-@app.route('/cron', methods=['POST', 'GET'])
-def update_cron_tab():
-    if request.method == 'GET':
-        utils.log('Crontab currently set to: ' + get_cron())
-        return get_cron()
-
-    params = request.get_json()
-    cron = params['cron']
-    utils.set_cron(cron)
-    
-    return 'Updated cron file.'
