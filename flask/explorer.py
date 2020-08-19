@@ -45,16 +45,14 @@ def startup():
     update_thread = threading.Thread(target=auto_update_index, daemon=True)
     update_thread.start()
 
+    if utils.get_es().indices.exists(index=utils.get_config()['elasticsearch_index_name']) is False:
+        utils.log('Index not found, creating new index.')
+        update()
+
 @app.errorhandler(Exception)
 def handle_error(e):
     utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
     return jsonify(error=str(e)), 500
-    es_indices = utils.get_es().indices.get(index='*,-localhost*,-.kibana')
-
-    if (len(es_indices) == 0):
-        utils.log('Index not found, creating new index.')
-        update()
-
 
 @app.route('/info', methods=['GET'])
 def info():
@@ -151,7 +149,7 @@ def incremental_remove_collection():
 def sparql_search_endpoint():
     try:
         # make sure index is built, or throw exception
-        if utils.get_es().indices.exists(index='*,-localhost*,-.kibana') is False or utils.get_es().cat.indices(format='json')[0]['health'] is 'red':
+        if utils.get_es().indices.exists(index=utils.get_config()['elasticsearch_index_name']) is False or utils.get_es().cat.indices(format='json')[0]['health'] is 'red':
             abort(503, 'Elasticsearch is not working or the index does not exist.')
 
         sparql_query = request.args.get('query')
@@ -175,7 +173,7 @@ def sparql_search_endpoint():
 @app.route('/search', methods=['GET'])
 def search_by_string():
     try:
-        if utils.get_es().indices.exists(index='*,-localhost*,-.kibana') is False or utils.get_es().cat.indices(format='json')[0]['health'] is 'red':
+        if utils.get_es().indices.exists(index=utils.get_config()['elasticsearch_index_name']) is False or utils.get_es().cat.indices(format='json')[0]['health'] is 'red':
             abort(503, 'Elasticsearch is not working or the index does not exist.')
 
         query = request.args.get('query')
