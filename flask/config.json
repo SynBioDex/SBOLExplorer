@@ -9,5 +9,5 @@
    "distributed_search": false,
    "which_search": "vsearch",
    "autoUpdateIndex": false,
-   "updateTimeInDays": "0"
+   "updateTimeInDays": "1"
 }
