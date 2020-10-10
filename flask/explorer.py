@@ -40,20 +40,23 @@ def startup():
                 utils.log('Updating index automatically. To disable, set the \"autoUpdateIndex\" property in config.json to false.')
                 update()
 
-    utils.log('SBOLExplorer started :)')
-
     # Thread for automatically updaing the index periodically
     update_thread = threading.Thread(target=auto_update_index, daemon=True)
     update_thread.start()
 
+    utils.log('SBOLExplorer started :)')
+
+    try:
+        if utils.get_es().indices.exists(index=utils.get_config()['elasticsearch_index_name']) is False:
+            utils.log('Index not found, creating new index.')
+            update()
+    except:
+        raise
+
 @app.errorhandler(Exception)
 def handle_error(e):
     utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
-    return jsonify(error=str(e)), 500
-  
-    if utils.get_es().indices.exists(index=utils.get_config()['elasticsearch_index_name']) is False:
-        utils.log('Index not found, creating new index.')
-        update()
+    return jsonify(error=str(e)), 500   
 
 
 @app.route('/info', methods=['GET'])
