@@ -266,15 +266,15 @@ def create_binding(subject, displayId, version, name, description, _type, role, 
             "value": role
         }
 
-    if order_by is not None:
-        binding["order_by"] = order_by
-
     if sbol_type is not None:
         binding["sboltype"] = {
             "type": "uri",
             "datatype": "http://www.w3.org/2001/XMLSchema#uri",
             "value": sbol_type
         }
+
+    if order_by is not None:
+        binding["order_by"] = order_by
 
     if percentMatch != -1:
         binding["percentMatch"] = {
@@ -316,7 +316,7 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
         Dict -- All parts and their corresponding information
     """
     bindings = []
-
+    seen_subjects = set(bindings)   # Prevents duplicates from being added
     cluster_duplicates = set()
 
     for hit in es_response['hits']['hits']:
@@ -338,17 +338,20 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
         if _source['type'] == 'http://sbols.org/v2#Sequence':
             _score = _score / 10.0
 
-        binding = create_binding(subject, 
-                _source.get('displayId'),
-                _source.get('version'),
-                _source.get('name'),
-                _source.get('description'),
-                _source.get('type'),
-                _source.get('role'),
-                _source.get('sboltype'),
-                _score)
+        if subject not in seen_subjects:
+            seen_subjects.add(subject)
 
-        bindings.append(binding)
+            binding = create_binding(subject, 
+                    _source.get('displayId'),
+                    _source.get('version'),
+                    _source.get('name'),
+                    _source.get('description'),
+                    _source.get('type'),
+                    _source.get('role'),
+                    _source.get('sboltype'),
+                    _score
+                    )
+            bindings.append(binding)
 
     return bindings
 
@@ -371,7 +374,7 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search = Fals
     bindings = []
 
     for part in criteria_response:
-        subject = part['subject']
+        subject = part.get('subject')
 
         if subject not in uri2rank:
             pagerank = 1
@@ -382,6 +385,7 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search = Fals
             pagerank = pagerank / 10.0
 
         if sequence_search:
+            pagerank = pagerank * (float(get_percent_match(part.get('subject'), ucTableName)) / 100)
             binding = create_binding(part.get('subject'),
                     part.get('displayId'),
                     part.get('version'),
