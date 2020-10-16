@@ -11,6 +11,7 @@ SBOLExplorer is a service that simplifies the process of analyzing and searching
     * Install ElasticSearch.
     * Start ElasticSearch (will be different depending on init vs systemd).
     * Optionally, configure ElasticSearch to start on boot.
+    * **Important**: If you are running ElasticSearch in Docker, make sure to run `sysctl -w vm.max_map_count=262144` on Linux, or `docker-machine ssh` then `sysctl -w vm.max_map_count=262144` if you are on Windows or MacOS.
 4. Install the latest version of Python 3 (https://www.python.org/downloads/).
 5. Go to the SBOLExplorer/flask directory and run `pip install -r requirements.txt` to install all the dependencies.  Try `pip3` instead of `pip` if that doesn't work.
 6. Run SBOLExplorer using `./start.sh` in the SBOLExplorer/flask directory.
