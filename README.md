@@ -34,7 +34,7 @@ Create a virtual environment in the parent directory. You can use the example co
 
 Activate this virtualenv using the command `source sbol-explorer-venv/bin/activate` (note: for the remainder of this guide, it will be assumed that your virtualenv is named `sbol-explorer-venv`) You should see `(sbol-explorer-venv)` before your command prompt if you've correctly activated the virtualenv. 
 
-Navigate into the `flask` directory. Run the command `pip install -r requirements.txt` to install all of the necessary Python packages for the validator. You should now be able to start SBOLExplorer by running the start.sh script using the `./start.sh` command.
+Navigate into the `flask` directory. Run the command `pip install -r requirements.txt` to install all of the necessary Python packages for SBOLExplorer. You should now be able to start SBOLExplorer by running the start.sh script using the `./start.sh` command.
 
 # Automatic build and deploy
 On each commit to master, a new Docker image is built and pushed to [Docker Hub](https://hub.docker.com/r/michael13162/sbolexplorer). 
