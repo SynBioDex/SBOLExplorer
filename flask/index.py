@@ -147,12 +147,26 @@ def bulk_index_parts(parts_response, index_name):
         utils.log('[ERROR] Error_messages: ' + '\n'.join(stats[1]))
         raise Exception("Bulk indexing failed")
 
+def get_all_parts(_filter=''):
+    graphs = query.query_graphs()
+    parts = []
+
+    for graph in graphs:
+        utils.log('Querying from graph: ' + graph['graph'])
+        results = query.query_parts(_from = 'FROM <' + graph['graph'] + '> ', criteria = _filter)
+
+        for part in results:
+            part['graph'] = graph['graph']
+
+        parts += results
+
+    return parts
 
 def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
     utils.log('Query for parts')
-    parts_response = query.query_parts(indexing = True)
+    parts_response = get_all_parts()
     utils.log('Query for parts complete')
 
     utils.log('Adding parts to new index')
@@ -187,7 +201,7 @@ def index_part(part):
 def refresh_index(subject, uri2rank):
     delete_subject(subject)
 
-    part_response = query.query_parts('', 'FILTER (?subject = <' + subject + '>)', True)
+    part_response = get_all_parts(_filter='FILTER (?subject = <' + subject + '>)')
 
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)
