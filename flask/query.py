@@ -6,7 +6,7 @@ import utils
 import re
 
 
-def query_parts(_from = '', criteria = '', indexing = False):
+def query_parts(_from = '', criteria = ''):
     query = '''
     SELECT DISTINCT
         ?subject
@@ -22,7 +22,7 @@ def query_parts(_from = '', criteria = '', indexing = False):
     WHERE {
     ''' + criteria + '''
         ?subject a ?type .
-        ?subject sbh:topLevel ?subject .''' + ('''\n    GRAPH ?graph { ?subject ?a ?t } .''' if indexing else "") + '''
+        ?subject sbh:topLevel ?subject .
         OPTIONAL { ?subject sbol2:displayId ?displayId . }
         OPTIONAL { ?subject sbol2:version ?version . }
         OPTIONAL { ?subject dcterms:title ?name . }
@@ -34,6 +34,15 @@ def query_parts(_from = '', criteria = '', indexing = False):
 
     return memoized_query_sparql(query)
 
+def query_graphs():
+    query = '''
+    SELECT DISTINCT 
+        ?graph 
+    WHERE {
+        GRAPH ?graph { ?s ?a ?t }
+    }
+    '''
+    return memoized_query_sparql(query)
 
 @lru_cache(maxsize=32)
 def memoized_query_sparql(query):
