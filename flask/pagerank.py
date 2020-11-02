@@ -3,41 +3,43 @@ import numpy as np
 import utils
 import query
 
-def get_uris():
+def get_uris(prefix):
     graphs = query.query_graphs()
     parts = []
 
     for graph in graphs:
-
-        uri_query = '''
-        SELECT DISTINCT ?subject
-        FROM <''' + graph['graph'] + '''>
-        WHERE
-        {
-            ?subject sbh:topLevel ?subject
-        }
-        '''
-        parts += query.memoized_query_sparql(uri_query)
+        if prefix in graph['graph']:
+            
+            uri_query = '''
+            SELECT DISTINCT ?subject
+            FROM <''' + graph['graph'] + '''>
+            WHERE
+            {
+                ?subject sbh:topLevel ?subject
+            }
+            '''
+            parts += query.memoized_query_sparql(uri_query)
 
     return parts
 
-def get_links():
+def get_links(prefix):
     graphs = query.query_graphs()
     parts = []
 
     for graph in graphs:
+        if prefix in graph['graph']:
 
-        link_query = '''
-        SELECT DISTINCT ?parent ?child
-        FROM <''' + graph['graph'] + '''>
-        WHERE
-        {
-            ?parent sbh:topLevel ?parent .
-            ?child sbh:topLevel ?child .
-            { ?parent ?oneLink ?child } UNION { ?parent ?twoLinkOne ?tmp . ?tmp ?twoLinkTwo ?child }
-        }
-        '''
-        parts += query.memoized_query_sparql(link_query)
+            link_query = '''
+            SELECT DISTINCT ?parent ?child
+            FROM <''' + graph['graph'] + '''>
+            WHERE
+            {
+                ?parent sbh:topLevel ?parent .
+                ?child sbh:topLevel ?child .
+                { ?parent ?oneLink ?child } UNION { ?parent ?twoLinkOne ?tmp . ?tmp ?twoLinkTwo ?child }
+            }
+            '''
+            parts += query.memoized_query_sparql(link_query)
 
     return parts
 
@@ -168,14 +170,14 @@ def make_uri2rank(pr_vector, uri2index):
     return uri2rank
 
 
-def update_pagerank():
+def update_pagerank(prefix):
     utils.log('Query for uris')
-    uri_response = get_uris()
+    uri_response = get_uris(prefix)
     utils.log('Query for uris complete')
     adjacency_list = populate_uris(uri_response)
 
     utils.log('Query for links')
-    link_response = get_links()
+    link_response = get_links(prefix)
     utils.log('Query for links complete')
     populate_links(link_response, adjacency_list)
 
