@@ -3,25 +3,43 @@ import numpy as np
 import utils
 import query
 
+def get_uris():
+    graphs = query.query_graphs()
+    parts = []
 
-link_query = '''
-SELECT DISTINCT ?parent ?child
-WHERE
-{
-    ?parent sbh:topLevel ?parent .
-    ?child sbh:topLevel ?child .
-    { ?parent ?oneLink ?child } UNION { ?parent ?twoLinkOne ?tmp . ?tmp ?twoLinkTwo ?child }
-}
-'''
+    for graph in graphs:
 
-uri_query = '''
-SELECT DISTINCT ?subject
-WHERE
-{
-    ?subject sbh:topLevel ?subject
-}
-'''
+        uri_query = '''
+        SELECT DISTINCT ?subject
+        FROM <''' + graph['graph'] + '''>
+        WHERE
+        {
+            ?subject sbh:topLevel ?subject
+        }
+        '''
+        parts += query.memoized_query_sparql(uri_query)
 
+    return parts
+
+def get_links():
+    graphs = query.query_graphs()
+    parts = []
+
+    for graph in graphs:
+
+        link_query = '''
+        SELECT DISTINCT ?parent ?child
+        FROM <''' + graph['graph'] + '''>
+        WHERE
+        {
+            ?parent sbh:topLevel ?parent .
+            ?child sbh:topLevel ?child .
+            { ?parent ?oneLink ?child } UNION { ?parent ?twoLinkOne ?tmp . ?tmp ?twoLinkTwo ?child }
+        }
+        '''
+        parts += query.memoized_query_sparql(link_query)
+
+    return parts
 
 class graph:
     # create uri to index mapping
@@ -152,12 +170,12 @@ def make_uri2rank(pr_vector, uri2index):
 
 def update_pagerank():
     utils.log('Query for uris')
-    uri_response = query.query_sparql(uri_query)
+    uri_response = get_uris()
     utils.log('Query for uris complete')
     adjacency_list = populate_uris(uri_response)
 
     utils.log('Query for links')
-    link_response = query.query_sparql(link_query)
+    link_response = get_links()
     utils.log('Query for links complete')
     populate_links(link_response, adjacency_list)
 
