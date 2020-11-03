@@ -147,26 +147,27 @@ def bulk_index_parts(parts_response, index_name):
         utils.log('[ERROR] Error_messages: ' + '\n'.join(stats[1]))
         raise Exception("Bulk indexing failed")
 
-def get_all_parts(_filter=''):
+def get_all_parts(prefix, _filter=''):
     graphs = query.query_graphs()
     parts = []
 
     for graph in graphs:
-        utils.log('Querying from graph: ' + graph['graph'])
-        results = query.query_parts(_from = 'FROM <' + graph['graph'] + '> ', criteria = _filter)
+        if prefix in graph['graph']:
+            utils.log('Querying from graph: ' + graph['graph'])
+            results = query.query_parts(_from = 'FROM <' + graph['graph'] + '> ', criteria = _filter)
 
-        for part in results:
-            part['graph'] = graph['graph']
+            for part in results:
+                part['graph'] = graph['graph']
 
-        parts += results
+            parts += results
 
     return parts
 
-def update_index(uri2rank):
+def update_index(uri2rank, prefix):
     index_name = utils.get_config()['elasticsearch_index_name']
 
     utils.log('Query for parts')
-    parts_response = get_all_parts()
+    parts_response = get_all_parts(prefix)
     utils.log('Query for parts complete')
 
     utils.log('Adding parts to new index')
@@ -198,10 +199,10 @@ def index_part(part):
     utils.get_es().index(index=index_name, doc_type=index_name, body=part)
 
 
-def refresh_index(subject, uri2rank):
+def refresh_index(subject, uri2rank, prefix):
     delete_subject(subject)
 
-    part_response = get_all_parts(_filter='FILTER (?subject = <' + subject + '>)')
+    part_response = get_all_parts(prefix, _filter='FILTER (?subject = <' + subject + '>)')
 
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)

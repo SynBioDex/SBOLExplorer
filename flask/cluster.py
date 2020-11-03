@@ -30,15 +30,28 @@ else:
 
 uclust_results_filename = 'usearch/uclust_results.uc'
 
-sequence_query = '''
-SELECT ?subject ?sequence
-WHERE {
-    ?subject a sbol2:ComponentDefinition .
-    ?subject sbol2:sequence ?seq .
-    ?seq a sbol2:Sequence .
-    ?seq sbol2:elements ?sequence .
-}
-'''
+
+def get_cluster_sequences(prefix):
+
+    graphs = query.query_graphs()
+    parts = []
+
+    for graph in graphs:
+        if prefix in graph['graph']:
+
+            sequence_query = '''
+            SELECT ?subject ?sequence
+            FROM <''' + graph['graph'] + '''>
+            WHERE {
+                ?subject a sbol2:ComponentDefinition .
+                ?subject sbol2:sequence ?seq .
+                ?seq a sbol2:Sequence .
+                ?seq sbol2:elements ?sequence .
+            }
+            '''
+            parts += query.memoized_query_sparql(sequence_query)
+
+    return parts
 
 
 def write_fasta(sequences):
@@ -137,9 +150,9 @@ def uclust2clusters():
     return clusters
 
 
-def update_clusters():
+def update_clusters(prefix):
     utils.log('Query for sequences')
-    sequences_response = query.query_sparql(sequence_query)
+    sequences_response = get_cluster_sequences(prefix)
     utils.log('Query for sequences complete')
     write_fasta(sequences_response)
 
