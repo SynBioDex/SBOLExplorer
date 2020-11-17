@@ -29,6 +29,7 @@ def query_parts(_from = '', criteria = ''):
         OPTIONAL { ?subject dcterms:description ?description . }
         OPTIONAL { ?subject sbol2:role ?role . }
         OPTIONAL { ?subject sbol2:type ?sboltype . }
+        FILTER( strStarts( str(?role), "http://wiki.synbiohub.org" ) ) .
     } 
     '''
 
