@@ -316,7 +316,6 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
         Dict -- All parts and their corresponding information
     """
     bindings = []
-    seen_subjects = set(bindings)   # Prevents duplicates from being added
     cluster_duplicates = set()
 
     for hit in es_response['hits']['hits']:
@@ -338,20 +337,17 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
         if _source['type'] == 'http://sbols.org/v2#Sequence':
             _score = _score / 10.0
 
-        if subject not in seen_subjects:
-            seen_subjects.add(subject)
-
-            binding = create_binding(subject, 
-                    _source.get('displayId'),
-                    _source.get('version'),
-                    _source.get('name'),
-                    _source.get('description'),
-                    _source.get('type'),
-                    _source.get('role'),
-                    _source.get('sboltype'),
-                    _score
-                    )
-            bindings.append(binding)
+        binding = create_binding(subject, 
+                _source.get('displayId'),
+                _source.get('version'),
+                _source.get('name'),
+                _source.get('description'),
+                _source.get('type'),
+                _source.get('role'),
+                _source.get('sboltype'),
+                _score
+                )
+        bindings.append(binding)
 
     return bindings
 

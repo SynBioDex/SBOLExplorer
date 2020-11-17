@@ -113,3 +113,4 @@ flask/usearch/sbsearch_uctable.uc
 flask/usearch/searchsequence.fsa
 flask/log.txt
 flask/sbol-explorer-venv/
+flask/config.json
