@@ -50,8 +50,12 @@ def add_roles(parts_response):
         term_list = json.load(so_json)
 
         for part in parts_response: 
+            # Split the CSV of roles from sparql
             role = part.get('role')
-            
+            if role is not None:
+                role = [r for r in role.split(',') if 'identifiers.org' in role]
+                role = role[0]
+
             if role is not None and 'identifiers.org' in role:
                 keywords_list = []
                 so_term = role[-10:]
