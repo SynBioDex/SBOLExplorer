@@ -14,7 +14,7 @@ def query_parts(_from = '', criteria = ''):
         ?version
         ?name
         ?description
-        ?type
+        (GROUP_CONCAT(?type;SEPARATOR=",") AS ?types)
         ?graph
         (GROUP_CONCAT(?role;SEPARATOR=",") AS ?roles)
         ?sboltype
