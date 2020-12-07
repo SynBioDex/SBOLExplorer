@@ -317,8 +317,8 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
     """
     bindings = []
     cluster_duplicates = set()
-
-    for hit in es_response['hits']['hits']:
+    hits = (h for h in es_response['hits']['hits'] if h['_source'].get('role') is None or 'http://wiki.synbiohub.org' in h['_source'].get('role'))
+    for hit in hits:
         _source = hit['_source']
         _score = hit['_score']
         subject = _source['subject']
@@ -334,7 +334,7 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects = No
         elif subject in clusters:
             cluster_duplicates.update(clusters[subject])
 
-        if _source['type'] == 'http://sbols.org/v2#Sequence':
+        if _source.get('type') is not None and'http://sbols.org/v2#Sequence' in _source.get('type'):
             _score = _score / 10.0
 
         binding = create_binding(subject, 
@@ -368,8 +368,8 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search = Fals
         Dict -- Binding of parts
     """
     bindings = []
-
-    for part in criteria_response:
+    parts = (p for p in criteria_response if p.get('role') is None or 'http://wiki.synbiohub.org' in p.get('role'))
+    for part in parts:
         subject = part.get('subject')
 
         if subject not in uri2rank:
@@ -377,7 +377,7 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search = Fals
         else:
             pagerank = uri2rank[subject]
 
-        if part.get('type') == 'http://sbols.org/v2#Sequence':
+        if part.get('type') is not None and 'http://sbols.org/v2#Sequence' in part.get('type'):
             pagerank = pagerank / 10.0
 
         if sequence_search:
@@ -394,6 +394,7 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search = Fals
                     get_percent_match(part.get('subject'), ucTableName), 
                     get_strand_alignment(part.get('subject'), ucTableName), 
                     get_cigar_data(part.get('subject'), ucTableName))
+
         else:
             binding = create_binding(part.get('subject'),
                     part.get('displayId'),

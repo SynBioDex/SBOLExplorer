@@ -16,7 +16,7 @@ def query_parts(_from = '', criteria = ''):
         ?description
         ?type
         ?graph
-        (GROUP_CONCAT(?role;SEPARATOR=",") AS ?roles)
+        ?role
         ?sboltype
     ''' + _from + '''
     WHERE {
