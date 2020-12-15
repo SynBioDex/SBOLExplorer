@@ -148,30 +148,31 @@ def bulk_index_parts(parts_response, index_name):
         utils.log('[ERROR] Error_messages: ' + '\n'.join(stats[1]))
         raise Exception("Bulk indexing failed")
 
-def get_all_parts(prefix, _filter=''):
+def get_all_parts(_filter=''):
     graphs = query.query_graphs()
     parts = []
 
     for graph in graphs:
-        if prefix in graph['graph']:
-            utils.log('Querying from graph: ' + graph['graph'])
-            results = query.query_parts(_from = 'FROM <' + graph['graph'] + '> ', criteria = _filter)
+        utils.log('Querying from graph: ' + graph['graph'])
+        results = query.query_parts(_from = 'FROM <' + graph['graph'] + '> ', criteria = _filter)
 
-            for part in results:
-                part['graph'] = graph['graph']
+        for part in results:
+            part['graph'] = graph['graph']
 
-            parts += results
+        parts += results
 
     return parts
 
-def update_index(uri2rank, prefix):
+def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
-    utils.log('Query for parts')
-    parts_response = get_all_parts(prefix)
-    utils.log('Query for parts complete')
+    utils.log('------------ Updating index ------------')
 
-    utils.log('Adding parts to new index')
+    utils.log('******** Query for parts ********')
+    parts_response = get_all_parts()
+    utils.log('******** Query for parts complete ********')
+
+    utils.log('******** Adding parts to new index ********')
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
     add_roles(parts_response)
@@ -179,7 +180,9 @@ def update_index(uri2rank, prefix):
     create_parts_index(index_name)
     bulk_index_parts(parts_response, index_name)
 
-    utils.log('Number of parts: ' + str(len(parts_response)))
+    utils.log('******** Finished adding ' + str(len(parts_response)) + ' parts to index ********')
+
+    utils.log('------------ Successfully updated index ------------\n')
 
 
 def delete_subject(subject):
@@ -200,10 +203,10 @@ def index_part(part):
     utils.get_es().index(index=index_name, doc_type=index_name, body=part)
 
 
-def refresh_index(subject, uri2rank, prefix):
+def refresh_index(subject, uri2rank):
     delete_subject(subject)
 
-    part_response = get_all_parts(prefix, _filter='FILTER (?subject = <' + subject + '>)')
+    part_response = get_all_parts(_filter='FILTER (?subject = <' + subject + '>)')
 
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)

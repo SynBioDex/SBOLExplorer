@@ -3,45 +3,25 @@ import numpy as np
 import utils
 import query
 
-def get_uris(prefix):
-    graphs = query.query_graphs()
-    parts = []
 
-    for graph in graphs:
-        if prefix in graph['graph']:
-            
-            uri_query = '''
-            SELECT DISTINCT ?subject
-            FROM <''' + graph['graph'] + '''>
-            WHERE
-            {
-                ?subject sbh:topLevel ?subject
-            }
-            '''
-            parts += query.memoized_query_sparql(uri_query)
+link_query = '''
+SELECT DISTINCT ?parent ?child
+WHERE
+{
+    ?parent sbh:topLevel ?parent .
+    ?child sbh:topLevel ?child .
+    { ?parent ?oneLink ?child } UNION { ?parent ?twoLinkOne ?tmp . ?tmp ?twoLinkTwo ?child }
+}
+'''
 
-    return parts
+uri_query = '''
+SELECT DISTINCT ?subject
+WHERE
+{
+    ?subject sbh:topLevel ?subject
+}
+'''
 
-def get_links(prefix):
-    graphs = query.query_graphs()
-    parts = []
-
-    for graph in graphs:
-        if prefix in graph['graph']:
-
-            link_query = '''
-            SELECT DISTINCT ?parent ?child
-            FROM <''' + graph['graph'] + '''>
-            WHERE
-            {
-                ?parent sbh:topLevel ?parent .
-                ?child sbh:topLevel ?child .
-                { ?parent ?oneLink ?child } UNION { ?parent ?twoLinkOne ?tmp . ?tmp ?twoLinkTwo ?child }
-            }
-            '''
-            parts += query.memoized_query_sparql(link_query)
-
-    return parts
 
 class graph:
     # create uri to index mapping
@@ -139,9 +119,7 @@ def pagerank(g, s=0.85, tolerance=0.001):
     iteration = 1
     delta = 2
     
-    while delta > tolerance:
-        utils.log('iteration: ' + str(iteration))
-        
+    while delta > tolerance:        
         v = np.matrix(np.zeros((n, 1)))
 
         dangling_contrib = sum([p[j] for j in g.dangling_pages]) / n
@@ -153,7 +131,7 @@ def pagerank(g, s=0.85, tolerance=0.001):
         new_p = v / np.sum(v)
             
         delta = np.sum(np.abs(p - new_p))
-        utils.log('L1 norm delta: ' + str(delta))
+        utils.log('Iteration ' + str(iteration) + ': L1 norm delta is ' + str(delta))
         
         p = new_p
         iteration += 1
@@ -170,21 +148,23 @@ def make_uri2rank(pr_vector, uri2index):
     return uri2rank
 
 
-def update_pagerank(prefix):
-    utils.log('Query for uris')
-    uri_response = get_uris(prefix)
-    utils.log('Query for uris complete')
+def update_pagerank():
+    utils.log('------------ Updating pagerank ------------')
+    utils.log('******** Query for uris ********')
+    uri_response = query.query_sparql(uri_query)
+    utils.log('******** Query for uris complete ********')
     adjacency_list = populate_uris(uri_response)
 
-    utils.log('Query for links')
-    link_response = get_links(prefix)
-    utils.log('Query for links complete')
+    utils.log('******** Query for links ********')
+    link_response = query.query_sparql(link_query)
+    utils.log('******** Query for links complete ********')
     populate_links(link_response, adjacency_list)
 
     g = graph(adjacency_list)
-    utils.log('Running pagerank')
+    utils.log('******** Running pagerank ********')
     pr = pagerank(g, tolerance=float(utils.get_config()['pagerank_tolerance']))
-    utils.log('Running pagerank complete')
+    utils.log('******** Running pagerank complete ********')
+    utils.log('------------ Successfully updated pagerank ------------\n')
     pr_vector = np.squeeze(np.asarray(pr))
 
     # after squeeze, make sure it at least has a dimension in the case that there is only one element
