@@ -30,28 +30,15 @@ else:
 
 uclust_results_filename = 'usearch/uclust_results.uc'
 
-
-def get_cluster_sequences(prefix):
-
-    graphs = query.query_graphs()
-    parts = []
-
-    for graph in graphs:
-        if prefix in graph['graph']:
-
-            sequence_query = '''
-            SELECT ?subject ?sequence
-            FROM <''' + graph['graph'] + '''>
-            WHERE {
-                ?subject a sbol2:ComponentDefinition .
-                ?subject sbol2:sequence ?seq .
-                ?seq a sbol2:Sequence .
-                ?seq sbol2:elements ?sequence .
-            }
-            '''
-            parts += query.memoized_query_sparql(sequence_query)
-
-    return parts
+sequence_query = '''
+SELECT ?subject ?sequence
+WHERE {
+    ?subject a sbol2:ComponentDefinition .
+    ?subject sbol2:sequence ?seq .
+    ?seq a sbol2:Sequence .
+    ?seq sbol2:elements ?sequence .
+}
+'''
 
 
 def write_fasta(sequences):
@@ -150,16 +137,18 @@ def uclust2clusters():
     return clusters
 
 
-def update_clusters(prefix):
-    utils.log('Query for sequences')
-    sequences_response = get_cluster_sequences(prefix)
-    utils.log('Query for sequences complete')
+def update_clusters():
+    utils.log('------------ Updating clusters ------------')
+    utils.log('******** Query for sequences ********')
+    sequences_response = query.query_sparql(sequence_query)
+    utils.log('******** Query for sequences complete ********')
     write_fasta(sequences_response)
 
-    utils.log('Running uclust')
+    utils.log('******** Running uclust ********')
     run_uclust()
-    utils.log('Running uclust complete')
+    utils.log('******** Running uclust complete ********')
 
     analyze_uclust()
+    utils.log('------------ Successsfully updated clusters ------------\n')
     return uclust2clusters()
 

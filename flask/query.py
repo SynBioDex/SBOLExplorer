@@ -79,7 +79,28 @@ def deduplicate_results(results):
 
 
 def page_query(query, endpoint):
-    utils.log('endpoint: ' + endpoint)
+    utils.log('Current endpoint: ' + endpoint)
+
+    bar = [
+    "[        ]",
+    "[=       ]",
+    "[===     ]",
+    "[====    ]",
+    "[=====   ]",
+    "[======  ]",
+    "[======= ]",
+    "[========]",
+    "[ =======]",
+    "[  ======]",
+    "[   =====]",
+    "[    ====]",
+    "[     ===]",
+    "[      ==]",
+    "[       =]",
+    "[        ]",
+    "[        ]"
+    ]
+    bar_counter = 0
 
     if endpoint != utils.get_config()['sparql_endpoint']:
         query = re.sub(r'''FROM.*\n''', '', query)
@@ -105,13 +126,15 @@ def page_query(query, endpoint):
     results = []
 
     while True:
+        print(bar[bar_counter % len(bar)], end="\r")
+        bar_counter+= 1
+
         full_query = query_prefix + query + 'OFFSET ' + str(offset) + ' LIMIT ' + str(limit)
         new_results = send_query(full_query, endpoint)
         results.extend(new_results)
-        utils.log(str(len(results)) + ' ')
 
         if len(new_results) != limit:
-            utils.log('\n')
+            utils.log('Total parts found: ' + str(len(results)) + '\n')
             break
 
         offset += limit

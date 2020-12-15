@@ -15,7 +15,6 @@ import sequencesearch
 
 import threading
 import time
-import base64
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -81,25 +80,19 @@ def config():
 def update():
     try:
         subject = request.args.get('subject')
-        prefix = request.args.get('prefix')
-
-        if prefix is not None:
-                prefix = str(base64.b64decode(prefix), encoding='UTF-8')
-        else:
-            prefix = ""
 
         if subject is None:
-
+            utils.log('============ STARTING INDEXING ============\n\n')
             utils.save_update_start_time()
 
-            clusters = cluster.update_clusters(prefix)
+            clusters = cluster.update_clusters()
             utils.save_clusters(clusters)
             
             
-            uri2rank = pagerank.update_pagerank(prefix)
+            uri2rank = pagerank.update_pagerank()
             utils.save_uri2rank(uri2rank)
 
-            index.update_index(utils.get_uri2rank(), prefix)
+            index.update_index(utils.get_uri2rank())
             
             query.memoized_query_sparql.cache_clear()
             utils.log('Cache cleared')
@@ -107,10 +100,10 @@ def update():
             utils.save_update_end_time()
             success_message = 'Successfully updated entire index'
         else:
-            index.refresh_index(subject, utils.get_uri2rank(), prefix)
+            index.refresh_index(subject, utils.get_uri2rank())
             success_message = 'Successfully refreshed: ' + subject
 
-        utils.log(success_message)
+        utils.log('============ INDEXING COMPLETED ============\n\n')
         return success_message
     except:
         raise
