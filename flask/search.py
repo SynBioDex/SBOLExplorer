@@ -433,7 +433,8 @@ def create_sequence_criteria(criteria, uris):
 def parse_allowed_graphs(allowed_graphs):
     result = ''
     for allowed_graph in allowed_graphs:
-        result += 'FROM <' + allowed_graph + '> '
+        if allowed_graph is not None:
+            result += 'FROM <' + allowed_graph + '> '
     return result
 
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
