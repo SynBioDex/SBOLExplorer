@@ -1,27 +1,27 @@
 # Overview of SBOLExplorer's Architecture
 
-## Start.sh
+## [Start.sh](start.sh)
 Run this bash script to start an instance of SBOLExplorer at http://localhost:3000
 
-## Explorer.py
+## [Explorer.py](Explorer.py)
 This is the main file of SBOLExplorer. All endpoints and Flask configuration are handled through this file.
 
-## Index.py
+## [Index.py](Index.py)
 This file contains all the methods needed for indexing. ``update_index()`` is the main method where all other helper methods are called.
 
-## Pagerank.py
+## [Pagerank.py](Pagerank.py)
 The "core" of SBOLExplorer. This is where the pagerank algorithm used in indexing is contained.
 
-## Query.py
+## [Query.py](Query.py)
 When indexing, SBOLExplorer uses these methods to query both Elasticseasrch and SPARQL for parts.
 
-## Search.py
+## [Search.py](Search.py)
 All of the processing of search terms goes here. Explorer decides where to send the search query based on the parameters of the search.
 
-## Sequencesearch.py
+## [Sequencesearch.py](Sequencesearch.py)
 This adds support for sequence-based searching via SBOLExplorer. 
 This is done using a VSEARCH binary located in the /usearch/ folder 
 (note that USEARCH binaries are also available, but currently are not supported for sequence-based searching).
 
-## Utils.py
+## [Utils.py](Utils.py)
 Methods for getting the config file, any necessary external endpoints, or serializing/deserializing files are located here.
