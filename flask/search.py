@@ -33,7 +33,7 @@ def search_es(es_query):
                             'keywords'
                         ],
                         'operator': 'or',
-                        'fuzziness': 'AUTO',
+                        'fuzziness': 'AUTO'
                     }
                 },
                 'script_score': {
@@ -77,10 +77,39 @@ def empty_search_es(offset, limit, allowed_graphs):
                 }
             }
         },
-        'from': offset,
         'size': limit
     }
-    return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+    
+    # Initial ES query
+    initial_search = utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body, scroll='5s')
+
+    # Store inital parts
+    parts = initial_search
+
+    # Get scroll ID for search
+    scroll_id = initial_search['_scroll_id']
+
+    # We will limit the size to 30k results
+    size = 0
+
+    # While the scroll search still returns results and we are below 30k total parts:
+    while (len(initial_search['hits']['hits']) and size < 30000):
+        initial_search = utils.get_es().scroll(scroll_id=scroll_id, scroll='5s')
+        # Save ID of latest scroll search in case ID changed
+        scroll_id = initial_search['_scroll_id']
+
+        # Append new parts to list of parts
+        parts['hits']['hits'].extend(initial_search['hits']['hits'])
+        # Increment counter of parts
+        size = size + len(initial_search['hits']['hits'])
+
+    # Clear scroll
+    utils.get_es().clear_scroll(scroll_id)
+
+    # Get all parts between from and limit
+    parts['hits']['hits'] = parts['hits']['hits'][offset:(offset+limit+1)]
+
+    return parts
 
 
 def extract_query(sparql_query):
