@@ -103,9 +103,12 @@ def populate_uris(uri_response):
 
 # add edges
 def populate_links(link_response, adjacency_list):
-    for link in link_response:
-        adjacency_list[link['parent']].add(link['child'])
-
+    try:
+        for link in link_response:
+            adjacency_list[link['parent']].add(link['child'])
+    except:
+        raise
+        
 
 def pagerank(g, s=0.85, tolerance=0.001):
     n = g.size
@@ -142,8 +145,11 @@ def pagerank(g, s=0.85, tolerance=0.001):
 def make_uri2rank(pr_vector, uri2index):
     uri2rank = {}
 
-    for uri in uri2index:
-        uri2rank[uri] = pr_vector[uri2index[uri]]
+    try:
+        for uri in uri2index:
+            uri2rank[uri] = pr_vector[uri2index[uri]]
+    except:
+        raise
 
     return uri2rank
 

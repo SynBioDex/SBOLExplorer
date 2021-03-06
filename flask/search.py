@@ -46,7 +46,10 @@ def search_es(es_query):
         'from': 0,
         'size': 10000
     }
-    return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+    try:
+        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+    except:
+        raise
 
 
 def empty_search_es(offset, limit, allowed_graphs):
@@ -80,9 +83,62 @@ def empty_search_es(offset, limit, allowed_graphs):
         'from': offset,
         'size': limit
     }
-    return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+    try:
+        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+    except:
+        raise
 
+def search_es_allowed_subjects(es_query, allowed_subjects):
+    """
+    String query for ES searches limited to allowed parts
+    
+    Arguments:
+        es_query {string} -- String to search for
+        allowed_subjects {list} - list of allowed subjects from Virtuoso
+    
+    Returns:
+        List -- List of all search results
+    """
+    body = {
+        'query': {
+            'function_score': {
+                'query': {
+                    'bool': {
+                        'must': [
+                        {'multi_match': {
+                        'query': es_query,
+                        'fields': [
+                            'subject',
+                            'displayId^3', # caret indicates displayId is 3 times as important during search
+                            'version',
+                            'name',
+                            'description',
+                            'type',
+                            'keywords'
+                        ],
+                        'operator': 'or',
+                        'fuzziness': 'AUTO',
+                    }},
+                    {'ids': {'values': allowed_subjects}}
+                        ]
+                    }
+                },
+                'script_score': {
+                    'script': {
+                        'source': "_score * Math.log(doc['pagerank'].value + 1)" # Math.log is a natural log
+                    }
+                },
 
+            },
+            
+        },
+        'from': 0,
+        'size': 10000
+    }
+    try:
+        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+    except:
+        raise
 def extract_query(sparql_query):
     """
     Extracts information from SPARQL query to be passed to ES
@@ -421,7 +477,7 @@ def get_allowed_subjects(criteria_response):
 
 def create_similar_criteria(criteria, clusters):
     subject = criteria.split(':', 1)[1]
-	
+    
     if subject not in clusters or not clusters[subject]:
         return 'FILTER (?subject != ?subject)'
 
@@ -484,9 +540,9 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         return create_response(es_response['hits']['total'], bindings, is_count_query(sparql_query))
 
     else:
-        es_response = search_es(es_query)
-
+        
         if filterless_criteria == '':
+            es_response = search_es(es_query)
             # pure string search
             bindings = create_bindings(es_response, clusters, allowed_graphs)
 
@@ -494,6 +550,7 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
             # advanced search and string search
             criteria_response = query.query_parts(_from, filterless_criteria)
             allowed_subjects = get_allowed_subjects(criteria_response)
+            es_allowed_subject = search_es_allowed_subjects(es_query, allowed_subjects)
             bindings = create_bindings(es_response, clusters, allowed_graphs, allowed_subjects)
 
     bindings.sort(key = lambda binding: binding['order_by'], reverse = True)

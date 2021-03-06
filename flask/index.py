@@ -99,7 +99,7 @@ def create_parts_index(index_name):
         utils.log('Index already exists -> deleting')
         utils.get_es().indices.delete(index=index_name)
 
-    mapping = {
+    body = {
         'mappings': {
             index_name: {
                 'properties': {
@@ -109,11 +109,15 @@ def create_parts_index(index_name):
                     'graph': {
                         'type': 'keyword'
                     }
-                }
+                },
             }
+        },
+        "settings": {
+            "number_of_shards": 1
         }
+
     }
-    utils.get_es().indices.create(index=index_name, body=mapping)
+    utils.get_es().indices.create(index=index_name, body=body)
     utils.log('Index created')
 
 
@@ -134,7 +138,7 @@ def bulk_index_parts(parts_response, index_name):
         action = {
             '_index': index_name,
             '_type': index_name,
-            '_id': i,
+            '_id': parts_response[i].get('subject'),
             '_source': parts_response[i]
         }
 
