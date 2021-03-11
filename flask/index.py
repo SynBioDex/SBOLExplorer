@@ -96,7 +96,7 @@ def create_parts_index(index_name):
     """
 
     if utils.get_es().indices.exists(index_name):
-        utils.log('Index already exists -> deleting')
+        utils.log_indexing('Index already exists -> deleting')
         utils.get_es().indices.delete(index=index_name)
 
     body = {
@@ -118,7 +118,7 @@ def create_parts_index(index_name):
 
     }
     utils.get_es().indices.create(index=index_name, body=body)
-    utils.log('Index created')
+    utils.log_indexing('Index created')
 
 
 def bulk_index_parts(parts_response, index_name):
@@ -144,24 +144,24 @@ def bulk_index_parts(parts_response, index_name):
 
         actions.append(action)
 
-    utils.log('Bulk indexing')
+    utils.log_indexing('Bulk indexing')
     try:
         stats = helpers.bulk(utils.get_es(), actions)
-        utils.log('Bulk indexing complete')
+        utils.log_indexing('Bulk indexing complete')
     except:
-        utils.log('[ERROR] Error_messages: ' + '\n'.join(stats[1]))
+        utils.log_indexing('[ERROR] Error_messages: ' + '\n'.join(stats[1]))
         raise Exception("Bulk indexing failed")
 
 def update_index(uri2rank):
     index_name = utils.get_config()['elasticsearch_index_name']
 
-    utils.log('------------ Updating index ------------')
+    utils.log_indexing('------------ Updating index ------------')
 
-    utils.log('******** Query for parts ********')
+    utils.log_indexing('******** Query for parts ********')
     parts_response = query.query_parts(indexing = True)
-    utils.log('******** Query for parts complete ********')
+    utils.log_indexing('******** Query for parts complete ********')
 
-    utils.log('******** Adding parts to new index ********')
+    utils.log_indexing('******** Adding parts to new index ********')
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
     add_roles(parts_response)
@@ -169,9 +169,9 @@ def update_index(uri2rank):
     create_parts_index(index_name)
     bulk_index_parts(parts_response, index_name)
 
-    utils.log('******** Finished adding ' + str(len(parts_response)) + ' parts to index ********')
+    utils.log_indexing('******** Finished adding ' + str(len(parts_response)) + ' parts to index ********')
 
-    utils.log('------------ Successfully updated index ------------\n')
+    utils.log_indexing('------------ Successfully updated index ------------\n')
 
 
 def delete_subject(subject):

@@ -82,7 +82,7 @@ def update():
         subject = request.args.get('subject')
 
         if subject is None:
-            utils.log('============ STARTING INDEXING ============\n\n')
+            utils.log_indexing('============ STARTING INDEXING ============\n\n')
             utils.save_update_start_time()
 
             clusters = cluster.update_clusters()
@@ -95,7 +95,7 @@ def update():
             index.update_index(utils.get_uri2rank())
             
             query.memoized_query_sparql.cache_clear()
-            utils.log('Cache cleared')
+            utils.log_indexing('Cache cleared')
 
             utils.save_update_end_time()
             success_message = 'Successfully updated entire index'
@@ -103,7 +103,7 @@ def update():
             index.refresh_index(subject, utils.get_uri2rank())
             success_message = 'Successfully refreshed: ' + subject
 
-        utils.log('============ INDEXING COMPLETED ============\n\n')
+        utils.log_indexing('============ INDEXING COMPLETED ============\n\n')
         return success_message
     except:
         raise
@@ -163,7 +163,6 @@ def sparql_search_endpoint():
         if sparql_query is not None:
             default_graph_uri = request.args.get('default-graph-uri')
             response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
-            utils.log('Search complete.')
             return response
         else:
             return "<pre><h1>Welcome to SBOLExplorer! <br> <h2>The available indices in Elasticsearch are shown below:</h2></h1><br>"\
@@ -186,7 +185,6 @@ def search_by_string():
 
         response = jsonify(search.search_es(query)['hits'])
 
-        utils.log('Successfully string searched')
         return response
     except:
         raise
