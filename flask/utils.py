@@ -139,7 +139,7 @@ def serialize(data, filename):
 
 
 def deserialize(filename):
-    if not path.exists(filename):
+    if not os.path.exists(filename):
         return {}
 
     f = open(filename, 'rb')
