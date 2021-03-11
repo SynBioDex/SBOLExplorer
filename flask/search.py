@@ -33,7 +33,7 @@ def search_es(es_query):
                             'keywords'
                         ],
                         'operator': 'or',
-                        'fuzziness': 'AUTO',
+                        'fuzziness': 'AUTO'
                     }
                 },
                 'script_score': {
@@ -117,9 +117,9 @@ def search_es_allowed_subjects(es_query, allowed_subjects):
                             'keywords'
                         ],
                         'operator': 'or',
-                        'fuzziness': 'AUTO',
+                        'fuzziness': 'AUTO'
                     }},
-                    {'ids': {'values': allowed_subjects}}
+                    {'ids': {'values': list(allowed_subjects)}}
                         ]
                     }
                 },
@@ -551,7 +551,8 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
             criteria_response = query.query_parts(_from, filterless_criteria)
             allowed_subjects = get_allowed_subjects(criteria_response)
             es_allowed_subject = search_es_allowed_subjects(es_query, allowed_subjects)
-            bindings = create_bindings(es_response, clusters, allowed_graphs, allowed_subjects)
+            bindings = create_bindings(es_allowed_subject, clusters, allowed_graphs, allowed_subjects)
+            utils.log('Advanced string search complete.')
 
     bindings.sort(key = lambda binding: binding['order_by'], reverse = True)
 
