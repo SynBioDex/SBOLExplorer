@@ -139,6 +139,44 @@ def search_es_allowed_subjects(es_query, allowed_subjects):
         return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
     except:
         raise
+
+def search_es_allowed_subjects_empty_string(allowed_subjects):
+    """
+    ES search purely limited to allowed parts
+    
+    Arguments:
+        allowed_subjects {list} - list of allowed subjects from Virtuoso
+    
+    Returns:
+        List -- List of all search results
+    """
+    body = {
+        'query': {
+            'function_score': {
+                'query': {
+                    'bool': {
+                        'must': [
+                            {'ids': {'values': list(allowed_subjects)}}
+                        ]
+                    }
+                },
+                'script_score': {
+                    'script': {
+                        'source': "_score * Math.log(doc['pagerank'].value + 1)" # Math.log is a natural log
+                    }
+                },
+
+            },
+            
+        },
+        'from': 0,
+        'size': 10000
+    }
+    try:
+        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+    except:
+        raise
+
 def extract_query(sparql_query):
     """
     Extracts information from SPARQL query to be passed to ES
@@ -550,7 +588,12 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
             # advanced search and string search
             criteria_response = query.query_parts(_from, filterless_criteria)
             allowed_subjects = get_allowed_subjects(criteria_response)
-            es_allowed_subject = search_es_allowed_subjects(es_query, allowed_subjects)
+
+            if es_query.strip() == '':
+                es_allowed_subject = search_es_allowed_subjects_empty_string(es_query, allowed_subjects)
+            else:
+                es_allowed_subject = search_es_allowed_subjects(es_query, allowed_subjects)
+
             bindings = create_bindings(es_allowed_subject, clusters, allowed_graphs, allowed_subjects)
             utils.log('Advanced string search complete.')
 
