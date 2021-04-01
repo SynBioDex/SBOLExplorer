@@ -1,6 +1,6 @@
 # SBOLExplorer
 
-SBOLExplorer is a service that simplifies the process of analyzing and searching for parts within genetic design repositories.  For questions, contact Eric Yu at <ejyu99@gmail.com>
+SBOLExplorer is a service that simplifies the process of analyzing and searching for parts within genetic design repositories.
 
 # Installation
 1. These installation steps assume you have the latest version of SynBioHub up and running on http://localhost:7777.  For instructions, see https://github.com/SynBioHub/synbiohub.
