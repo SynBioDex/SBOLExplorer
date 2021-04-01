@@ -423,9 +423,8 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects=None
     """
     bindings = []
     cluster_duplicates = set()
-    hits = (h for h in es_response['hits']['hits'] if
-            h['_source'].get('role') is None or 'http://wiki.synbiohub.org' in h['_source'].get('role'))
-    for hit in hits:
+
+    for hit in es_response['hits']['hits']:
         _source = hit['_source']
         _score = hit['_score']
         subject = _source['subject']
