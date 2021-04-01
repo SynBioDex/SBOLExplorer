@@ -565,7 +565,7 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         criteria_response = query.query_parts(_from, similar_criteria) 
         bindings = create_criteria_bindings(criteria_response, uri2rank)
 
-    elif 'USES' in criteria or 'TWINS' in criteria or (es_query == '' and filterless_criteria != ''):
+    elif 'USES' in criteria or 'TWINS' in criteria:
         # USES or TWINS or pure advanced search
         criteria_response = query.query_parts(_from, criteria)
         bindings = create_criteria_bindings(criteria_response, uri2rank)
@@ -589,8 +589,8 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
             criteria_response = query.query_parts(_from, filterless_criteria)
             allowed_subjects = get_allowed_subjects(criteria_response)
 
-            if es_query.strip() == '':
-                es_allowed_subject = search_es_allowed_subjects_empty_string(es_query, allowed_subjects)
+            if es_query == '':
+                es_allowed_subject = search_es_allowed_subjects_empty_string(allowed_subjects)
             else:
                 es_allowed_subject = search_es_allowed_subjects(es_query, allowed_subjects)
 
