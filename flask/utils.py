@@ -4,7 +4,7 @@ import pickle
 import requests
 import datetime
 import subprocess
-from os import path
+import os
 
 config = None
 
@@ -124,9 +124,21 @@ def log(message):
     log_message = '[' + str(datetime.datetime.now()) + '] ' + message + '\n'
     print(log_message)
 
+    if os.path.exists('log.txt') and os.path.getsize('log.txt') > 20000000: # Delete the log if it is > 20 MB
+        os.remove('log.txt')
+
     with open('log.txt', 'a+') as f:
         f.write(log_message)
 
+def log_indexing(message):
+    log_message = '[' + str(datetime.datetime.now()) + '] ' + message + '\n'
+    print(log_message)
+
+    if os.path.exists('indexing_log.txt') and os.path.getsize('indexing_log.txt') > 20000000: # Delete the log if it is > 20 MB
+        os.remove('indexing_log.txt')
+
+    with open('indexing_log.txt', 'a+') as f:
+        f.write(log_message)
 
 def get_log():
     """
@@ -137,6 +149,9 @@ def get_log():
     with open('log.txt', 'r') as f:
         return f.read()
 
+def get_indexing_log():
+    with open('indexing_log.txt', 'r') as f:
+        return f.read()
 
 clusters = None
 clusters_filename = 'dumps/clusters_dump'
@@ -217,6 +232,7 @@ def serialize(data, filename):
 
 
 def deserialize(filename):
+    if not os.path.exists(filename):
     """
     Deserializes data from a serialized file
     Args:
@@ -225,7 +241,6 @@ def deserialize(filename):
     Returns: Deserialized data from file
 
     """
-    if not path.exists(filename):
         return {}
 
     f = open(filename, 'rb')

@@ -56,7 +56,7 @@ def run_uclust():
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    utils.log(str(output))
+    utils.log_indexing(str(output))
 
 
 def analyze_uclust():
@@ -80,11 +80,11 @@ def analyze_uclust():
                 hits += 1
     
     f.close()
-    utils.log('parts: ' + str(total_parts))
-    utils.log('hits: ' + str(hits))
+    utils.log_indexing('parts: ' + str(total_parts))
+    utils.log_indexing('hits: ' + str(hits))
 
     if hits > 0:
-        utils.log('average hit identity: ' + str(total_identity / hits))
+        utils.log_indexing('average hit identity: ' + str(total_identity / hits))
 
 
 def uclust2uris(fileName):
@@ -138,17 +138,17 @@ def uclust2clusters():
 
 
 def update_clusters():
-    utils.log('------------ Updating clusters ------------')
-    utils.log('******** Query for sequences ********')
+    utils.log_indexing('------------ Updating clusters ------------')
+    utils.log_indexing('******** Query for sequences ********')
     sequences_response = query.query_sparql(sequence_query)
-    utils.log('******** Query for sequences complete ********')
+    utils.log_indexing('******** Query for sequences complete ********')
     write_fasta(sequences_response)
 
-    utils.log('******** Running uclust ********')
+    utils.log_indexing('******** Running uclust ********')
     run_uclust()
-    utils.log('******** Running uclust complete ********')
+    utils.log_indexing('******** Running uclust complete ********')
 
     analyze_uclust()
-    utils.log('------------ Successsfully updated clusters ------------\n')
+    utils.log_indexing('------------ Successsfully updated clusters ------------\n')
     return uclust2clusters()
 

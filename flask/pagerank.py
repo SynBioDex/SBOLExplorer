@@ -116,7 +116,7 @@ def pagerank(g, s=0.85, tolerance=0.001):
 
 
     if n == 0:
-        utils.log('no iterations: empty graph')
+        utils.log_indexing('no iterations: empty graph')
         return p
     
     iteration = 1
@@ -134,7 +134,7 @@ def pagerank(g, s=0.85, tolerance=0.001):
         new_p = v / np.sum(v)
             
         delta = np.sum(np.abs(p - new_p))
-        utils.log('Iteration ' + str(iteration) + ': L1 norm delta is ' + str(delta))
+        utils.log_indexing('Iteration ' + str(iteration) + ': L1 norm delta is ' + str(delta))
         
         p = new_p
         iteration += 1
@@ -155,22 +155,22 @@ def make_uri2rank(pr_vector, uri2index):
 
 
 def update_pagerank():
-    utils.log('------------ Updating pagerank ------------')
-    utils.log('******** Query for uris ********')
+    utils.log_indexing('------------ Updating pagerank ------------')
+    utils.log_indexing('******** Query for uris ********')
     uri_response = query.query_sparql(uri_query)
-    utils.log('******** Query for uris complete ********')
+    utils.log_indexing('******** Query for uris complete ********')
     adjacency_list = populate_uris(uri_response)
 
-    utils.log('******** Query for links ********')
+    utils.log_indexing('******** Query for links ********')
     link_response = query.query_sparql(link_query)
-    utils.log('******** Query for links complete ********')
+    utils.log_indexing('******** Query for links complete ********')
     populate_links(link_response, adjacency_list)
 
     g = graph(adjacency_list)
-    utils.log('******** Running pagerank ********')
+    utils.log_indexing('******** Running pagerank ********')
     pr = pagerank(g, tolerance=float(utils.get_config()['pagerank_tolerance']))
-    utils.log('******** Running pagerank complete ********')
-    utils.log('------------ Successfully updated pagerank ------------\n')
+    utils.log_indexing('******** Running pagerank complete ********')
+    utils.log_indexing('------------ Successfully updated pagerank ------------\n')
     pr_vector = np.squeeze(np.asarray(pr))
 
     # after squeeze, make sure it at least has a dimension in the case that there is only one element
