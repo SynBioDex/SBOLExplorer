@@ -517,6 +517,14 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False,
 
 
 def get_allowed_subjects(criteria_response):
+    """
+    Filters the allowed subjects from the unfiltered list from Virtuoso
+    Args:
+        criteria_response: Unfiltered response from Virtuoso
+
+    Returns: Parts the user is allowed to see
+
+    """
     subjects = set()
 
     for part in criteria_response:
@@ -526,6 +534,15 @@ def get_allowed_subjects(criteria_response):
 
 
 def create_similar_criteria(criteria, clusters):
+    """
+    Adds filter to query to be sent to Virtuoso
+    Args:
+        criteria: Criteria from SynBioHub
+        clusters: Cluster of parts
+
+    Returns: String containing a SPARQL filter
+
+    """
     subject = criteria.split(':', 1)[1]
 
     if subject not in clusters or not clusters[subject]:
@@ -535,10 +552,27 @@ def create_similar_criteria(criteria, clusters):
 
 
 def create_sequence_criteria(criteria, uris):
+    """
+    Adds filter to query to be sent to Virtuoso
+    Args:
+        criteria: Criteria from SynBioHub
+        uris: URI's to be filtered
+
+    Returns: String containing a SPARQL filter
+
+    """
     return 'FILTER (' + ' || '.join(['?subject = <' + uri + '>' for uri in uris]) + ')'
 
 
 def parse_allowed_graphs(allowed_graphs):
+    """
+    Grabs allowed graphs for user
+    Args:
+        allowed_graphs: Allowed graphs
+
+    Returns: List of allowed graphs
+
+    """
     result = ''
     for allowed_graph in allowed_graphs:
         if allowed_graph is not None:
@@ -547,6 +581,17 @@ def parse_allowed_graphs(allowed_graphs):
 
 
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
+    """
+    Main search method.
+    Args:
+        sparql_query: SPARQL query to be sent to Virtuoso
+        uri2rank: List of pageranks for each URI
+        clusters: Clusters of parts
+        default_graph_uri: The default graph URI
+
+    Returns: List of parts (JSON)
+
+    """
     es_query, _from, criteria, offset, limit, sequence, flags = extract_query(sparql_query)
 
     if criteria.strip() == 'FILTER ()':
@@ -618,6 +663,15 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
 
 
 def get_percent_match(uri, ucTableName):
+    """
+    Get percent match from USEARCH
+    Args:
+        uri: URI of part
+        ucTableName: UClust table
+
+    Returns: Percent match if available, else -1
+
+    """
     with open(ucTableName, 'r') as read:
         uc_reader = read.read()
         lines = uc_reader.splitlines()
@@ -631,6 +685,15 @@ def get_percent_match(uri, ucTableName):
 
 
 def get_strand_alignment(uri, ucTableName):
+    """
+    Gets the strand alignment (+ or -) of the part
+    Args:
+        uri: URI of the part
+        ucTableName: UClust table
+
+    Returns: + or -
+
+    """
     with open(ucTableName, 'r') as read:
         uc_reader = read.read()
         lines = uc_reader.splitlines()
@@ -644,6 +707,15 @@ def get_strand_alignment(uri, ucTableName):
 
 
 def get_cigar_data(uri, ucTableName):
+    """
+    Gets the CIGAR data of a part (see https://genome.sph.umich.edu/wiki/SAM)
+    Args:
+        uri: URI of the part
+        ucTableName: UClust table
+
+    Returns: CIGAR data if found, or N/A
+
+    """
     with open(ucTableName, 'r') as read:
         uc_reader = read.read()
         lines = uc_reader.splitlines()
