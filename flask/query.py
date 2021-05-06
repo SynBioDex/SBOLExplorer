@@ -124,7 +124,6 @@ def page_query(query, endpoint):
         results.extend(new_results)
 
         if len(new_results) != limit:
-            utils.log('Total parts found: ' + str(len(results)) + '\n')
             break
 
         offset += limit

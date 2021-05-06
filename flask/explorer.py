@@ -64,6 +64,9 @@ def info():
     utils.log('Explorer up!!! Virtutoso ' + str(query.memoized_query_sparql.cache_info()))
     return utils.get_log()
 
+@app.route('/indexinginfo', methods=['GET'])
+def indexinginfo():
+    return utils.get_indexing_log()
 
 @app.route('/config', methods=['POST', 'GET'])
 def config():
