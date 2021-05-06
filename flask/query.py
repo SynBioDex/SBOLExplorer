@@ -7,6 +7,16 @@ import re
 
 
 def query_parts(_from = '', criteria = '', indexing = False):
+    """
+    Gets all parts from Virtuoso
+    Args:
+        _from: Graph the parts are from
+        criteria: Any additional criteria
+        indexing: Whether this query is being called during indexing
+
+    Returns: Formatted list of all parts from Virtuoso
+
+    """
     query = '''
     SELECT DISTINCT
         ?subject
@@ -34,12 +44,29 @@ def query_parts(_from = '', criteria = '', indexing = False):
 
     return memoized_query_sparql(query)
 
+
 @lru_cache(maxsize=32)
 def memoized_query_sparql(query):
+    """
+    Speeds up SPARQL queries using a LRU cache
+    Args:
+        query: SPARQL Query
+
+    Returns: Results of the SPARQL query
+
+    """
     return query_sparql(query)
 
 
 def query_sparql(query):
+    """
+    Query instances of Virtuoso
+    Args:
+        query: SPARQL query
+
+    Returns:
+
+    """
     endpoints = [utils.get_config()['sparql_endpoint']]
 
     if utils.get_config()['distributed_search']:
@@ -60,6 +87,14 @@ def query_sparql(query):
 
 
 def deduplicate_results(results):
+    """
+    Removes duplicates from all SPARQL queries to various Virtuoso instances
+    Args:
+        results: List of results which may contain duplicates
+
+    Returns: Deduplicated list of results
+
+    """
     deduped = set()
 
     for result in results:
@@ -69,6 +104,15 @@ def deduplicate_results(results):
 
 
 def page_query(query, endpoint):
+    """
+    Query to get results from a particular page in SynBioHub
+    Args:
+        query: Query to run
+        endpoint: Virtuoso endpoint to hit
+
+    Returns: List of parts
+
+    """
     utils.log('Current endpoint: ' + endpoint)
 
     bar = [
@@ -132,6 +176,15 @@ def page_query(query, endpoint):
 
 
 def send_query(query, endpoint):
+    """
+    Sends a query to Virtuoso
+    Args:
+        query: Query to be sent
+        endpoint: Endpoint where Virtuoso resides
+
+    Returns: List of parts from Virtuoso
+
+    """
     params = {'query': query}
 
     if endpoint == utils.get_config()['sparql_endpoint']:

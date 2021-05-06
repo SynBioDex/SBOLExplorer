@@ -153,6 +153,14 @@ def bulk_index_parts(parts_response, index_name):
         raise Exception("Bulk indexing failed")
 
 def update_index(uri2rank):
+    """
+    Main method
+    Args:
+        uri2rank: List of pageranks for each URI
+
+    Returns:
+
+    """
     index_name = utils.get_config()['elasticsearch_index_name']
 
     utils.log_indexing('------------ Updating index ------------')
@@ -175,11 +183,23 @@ def update_index(uri2rank):
 
 
 def delete_subject(subject):
+    """
+    Delete part for incremental indexing
+    Args:
+        subject:
+
+    Returns:
+
+    """
     index_name = utils.get_config()['elasticsearch_index_name']
 
     body = {
         'query': {
-            'term': { 'subject': subject }
+            'bool': {
+                'must': [
+                    {'ids': {'values': subject}}
+                ]
+            }
         },
         'conflicts': 'proceed'
     }
@@ -189,7 +209,7 @@ def delete_subject(subject):
 def index_part(part):
     delete_subject(part['subject'])
     index_name = utils.get_config()['elasticsearch_index_name']
-    utils.get_es().index(index=index_name, doc_type=index_name, body=part)
+    utils.get_es().index(index=index_name, doc_type=index_name, id=part['subject'], body=part)
 
 
 def refresh_index(subject, uri2rank):
