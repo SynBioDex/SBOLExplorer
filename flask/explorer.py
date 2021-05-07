@@ -86,6 +86,7 @@ def update():
 
         if subject is None:
             utils.log_indexing('============ STARTING INDEXING ============\n\n')
+            utils.log('============ STARTING INDEXING ============\n\n')
             utils.save_update_start_time()
 
             clusters = cluster.update_clusters()
@@ -107,6 +108,7 @@ def update():
             success_message = 'Successfully refreshed: ' + subject
 
         utils.log_indexing('============ INDEXING COMPLETED ============\n\n')
+        utils.log('============ INDEXING COMPLETED ============\n\n')
         return success_message
     except:
         raise
