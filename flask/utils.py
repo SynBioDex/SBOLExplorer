@@ -232,7 +232,6 @@ def serialize(data, filename):
 
 
 def deserialize(filename):
-    if not os.path.exists(filename):
     """
     Deserializes data from a serialized file
     Args:
@@ -241,6 +240,7 @@ def deserialize(filename):
     Returns: Deserialized data from file
 
     """
+    if not os.path.exists(filename):
         return {}
 
     f = open(filename, 'rb')
