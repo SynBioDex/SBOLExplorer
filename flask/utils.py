@@ -146,12 +146,18 @@ def get_log():
     Returns: Stream from the read() method
 
     """
-    with open('log.txt', 'r') as f:
-        return f.read()
+    try:
+        with open('log.txt', 'r') as f:
+            return f.read()
+    except:
+        return ""
 
 def get_indexing_log():
-    with open('indexing_log.txt', 'r') as f:
-        return f.read()
+    try:
+        with open('indexing_log.txt', 'r') as f:
+            return f.read()
+    except:
+        return ""
 
 clusters = None
 clusters_filename = 'dumps/clusters_dump'
