@@ -110,8 +110,8 @@ def update():
         utils.log_indexing('============ INDEXING COMPLETED ============\n\n')
         utils.log('============ INDEXING COMPLETED ============\n\n')
         return success_message
-    except:
-        raise
+    except Exception as e:
+    	utils.log_indexing('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
 
 
 @app.route('/incrementalupdate', methods=['POST'])
