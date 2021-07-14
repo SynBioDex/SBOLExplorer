@@ -561,7 +561,7 @@ def create_sequence_criteria(criteria, uris):
     Returns: String containing a SPARQL filter
 
     """
-    if len(uri) == 0:
+    if len(uris) == 0:
         return ''
 
     return 'FILTER (' + ' || '.join(['?subject = <' + uri + '>' for uri in uris]) + ')'
