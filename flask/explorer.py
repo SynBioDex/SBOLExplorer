@@ -35,8 +35,8 @@ def startup():
     # Method for running auto indexing
     def auto_update_index():
         while True:
+            time.sleep(int(utils.get_config()['updateTimeInDays']) * 86400)
             if utils.get_config()['autoUpdateIndex'] and utils.get_config()['updateTimeInDays'] > 0:
-                time.sleep(int(utils.get_config()['updateTimeInDays']) * 86400)
                 utils.log('Updating index automatically. To disable, set the \"autoUpdateIndex\" property in config.json to false.')
                 update()
 
