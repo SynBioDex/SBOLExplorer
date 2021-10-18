@@ -46,7 +46,7 @@ def run_vsearch_global(fileName):
         fileName {string} -- Path to file
     """
     # setting maxaccepts to 0 disables the limit (searches for all possible matches)
-    args = [vsearch_binary_filename, '--usearch_global', fileName, '--db', 'usearch/sequences.fsa','--uc', fileName[:-4] + '.uc', '--uc_allhits',]
+    args = [vsearch_binary_filename, '--usearch_global', fileName, '--db', 'dumps/sequences.fsa','--uc', fileName[:-4] + '.uc', '--uc_allhits',]
     args = append_flags_to_args(args, globalFlags)
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
@@ -61,7 +61,7 @@ def run_vsearch_exact(fileName):
         fileName {string} -- Path to file
     """
     # setting maxaccepts to 0 disables the limit (searches for all possible matches)
-    args = [vsearch_binary_filename, '--search_exact', fileName, '--db', 'usearch/sequences.fsa','--uc', fileName[:-4] + '.uc', '--uc_allhits']
+    args = [vsearch_binary_filename, '--search_exact', fileName, '--db', 'dumps/sequences.fsa','--uc', fileName[:-4] + '.uc', '--uc_allhits']
     args = append_flags_to_args(args, exactFlags)
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
