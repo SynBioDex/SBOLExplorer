@@ -21,7 +21,6 @@ EXPOSE 13162
 
 RUN mkdir /mnt/config && \
     mkdir /mnt/data && \
-    mkdir /mnt/data/dumps && \
     mv config.json /mnt/config && \ 
     ln -s /mnt/config/config.json config.json && \
     rm -rf dumps && \
