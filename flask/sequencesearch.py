@@ -15,7 +15,7 @@ if platform == "linux" or platform == "linux2":
 elif platform == "darwin":
     vsearch_binary_filename = 'usearch/vsearch_macos'
 else:
-    print("Sorry, your OS is not supported for sequence based-search.")
+    utils.log("Sorry, your OS is not supported for sequence based-search.")
 
 # add valid flags to here
 globalFlags = {'maxaccepts': '50', 'id': '0.8', 'iddef': '2', 'maxrejects': '0', 'maxseqlength': '5000', 'minseqlength': '20'}
@@ -51,7 +51,7 @@ def run_vsearch_global(fileName):
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    print(output)
+    utils.log(output)
 
 def run_vsearch_exact(fileName):
     """
@@ -66,7 +66,7 @@ def run_vsearch_exact(fileName):
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    print(output)
+    utils.log(output)
 
 
 def append_flags_to_args(argsList, flags):

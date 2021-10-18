@@ -26,7 +26,7 @@ elif platform == "darwin":
     elif whichSearch == 'vsearch':
         usearch_binary_filename = 'usearch/vsearch_macos'
 else:
-    print("Sorry, your OS is not supported for sequence based-search.")
+    utils.log("Sorry, your OS is not supported for sequence based-search.")
 
 uclust_results_filename = 'usearch/uclust_results.uc'
 
