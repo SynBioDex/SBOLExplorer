@@ -607,7 +607,7 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
     if 'file_search' in flags:
         filename = str(flags['file_search'])
         results = sequencesearch.sequence_search(flags, filename)
-        sequence_criteria = create_sequence_criteria(criteria, results)
+        sequence_criteria = create_sequence_criteria(criteria, filter_sequence_search_subjects(_from, results))
         criteria_response = query.query_parts(_from, sequence_criteria)
         bindings = create_criteria_bindings(criteria_response, uri2rank, True, filename[:-4] + '.uc')
 
@@ -618,7 +618,7 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
 
         # return new clusters here
         # pass into func -> queryparts create_sequence_criteria
-        sequence_criteria = create_sequence_criteria(criteria, results)
+        sequence_criteria = create_sequence_criteria(criteria, filter_sequence_search_subjects(_from, results))
         criteria_response = query.query_parts(_from, sequence_criteria)
         bindings = create_criteria_bindings(criteria_response, uri2rank, True, temp_filename[:-4] + '.uc')
 
@@ -729,3 +729,20 @@ def get_cigar_data(uri, ucTableName):
                 return line[7]
 
         return 'N/A'
+
+def filter_sequence_search_subjects(_from, uris):
+    """
+    Adds filters to SPARQL based on the allowed graphs and URI's from sequence search
+    
+    [description]
+    
+    Arguments:
+        _from {list} -- List of allowed graphs
+        uris {list} -- List of URI's from sequence search
+    """
+    from_uris = []
+    result = re.findall(r"\<([A-Za-z0-9:\/.]+)\>*", _from)
+    for r in result:
+        from_uris.append(r)
+   
+    return [uri for uri in uris if any(f for f in from_uris if f in uri)]
