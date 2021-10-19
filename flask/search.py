@@ -607,20 +607,21 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
     if 'file_search' in flags:
         filename = str(flags['file_search'])
         results = sequencesearch.sequence_search(flags, filename)
-        sequence_criteria = create_sequence_criteria(criteria, filter_sequence_search_subjects(_from, results))
-        criteria_response = query.query_parts(_from, sequence_criteria)
-        bindings = create_criteria_bindings(criteria_response, uri2rank, True, filename[:-4] + '.uc')
+        allowed_uris = filter_sequence_search_subjects(_from, results)
+        criteria_response = query.query_parts(_from)
+        # Filter searches by URI to hide private parts here instead of on Virtuoso
+        criteria_response_filtered = [c for c in criteria_response if any(f for f in allowed_uris if f in c.get('subject'))]
+        bindings = create_criteria_bindings(criteria_response_filtered, uri2rank, True, filename[:-4] + '.uc')
 
     elif len(sequence.strip()) > 0:
         # send sequence search to search.py
         temp_filename = sequencesearch.write_to_temp(sequence)
         results = sequencesearch.sequence_search(flags, temp_filename)
 
-        # return new clusters here
-        # pass into func -> queryparts create_sequence_criteria
-        sequence_criteria = create_sequence_criteria(criteria, filter_sequence_search_subjects(_from, results))
-        criteria_response = query.query_parts(_from, sequence_criteria)
-        bindings = create_criteria_bindings(criteria_response, uri2rank, True, temp_filename[:-4] + '.uc')
+        allowed_uris = filter_sequence_search_subjects(_from, results)
+        criteria_response = query.query_parts(_from)
+        criteria_response_filtered = [c for c in criteria_response if any(f for f in allowed_uris if f in c.get('subject'))]
+        bindings = create_criteria_bindings(criteria_response_filtered, uri2rank, True, temp_filename[:-4] + '.uc')
 
     elif 'SIMILAR' in criteria:
         # SIMILAR
