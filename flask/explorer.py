@@ -3,6 +3,7 @@
 from flask import Flask, request, jsonify, abort
 from werkzeug.exceptions import HTTPException
 
+import os
 import traceback
 import logging
 import cluster
@@ -11,7 +12,6 @@ import index
 import search
 import utils
 import query
-import sequencesearch
 
 import threading
 import time
@@ -43,6 +43,12 @@ def startup():
     # Thread for automatically updaing the index periodically
     update_thread = threading.Thread(target=auto_update_index, daemon=True)
     update_thread.start()
+
+    if os.path.exists('log.txt') and os.path.getsize('log.txt') > 20000000: # Delete the log if it is > 20 MB
+            os.remove('log.txt')
+    
+    if os.path.exists('indexing_log.txt') and os.path.getsize('indexing_log.txt') > 20000000: # Delete the log if it is > 20 MB
+        os.remove('indexing_log.txt')
 
     utils.log('SBOLExplorer started :)')
 
