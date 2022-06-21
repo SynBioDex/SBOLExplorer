@@ -9,7 +9,7 @@ ipaddress==1.0.22
 itsdangerous==0.24
 Jinja2==2.10
 MarkupSafe==1.0
-numpy==1.14.5
+numpy==1.22.0
 python-dateutil==2.7.3
 requests==2.19.1
 six==1.11.0
