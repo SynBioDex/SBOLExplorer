@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify, abort, render_template
 from werkzeug.exceptions import HTTPException
 
 import os
@@ -15,11 +15,44 @@ import query
 
 import threading
 import time
+from flask_debugtoolbar import DebugToolbarExtension
+from flask_debugtoolbar_lineprofilerpanel.profile import line_profile
 
+
+def profile_flask_app():
+    app.run(debug=True)
+
+if __name__ == "__main__":
+    #profiler = profile.Profile()
+    #profiler.enable()
+    profile_flask_app()
+    #profiler.disable()
+    #profiler.print_stats(sort='time')
+    
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your-secret-key'  # Required for the debug toolbar
+app.config['DEBUG'] = True
+app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = False
+# Profiler configuration
+app.config['DEBUG_TB_PROFILER_ENABLED'] = True
+app.config['DEBUG_TB_PANELS'] = [
+    'flask_debugtoolbar.panels.versions.VersionDebugPanel',
+    'flask_debugtoolbar.panels.timer.TimerDebugPanel',
+    'flask_debugtoolbar.panels.headers.HeaderDebugPanel',
+    'flask_debugtoolbar.panels.request_vars.RequestVarsDebugPanel',
+    'flask_debugtoolbar.panels.config_vars.ConfigVarsDebugPanel',
+    'flask_debugtoolbar.panels.template.TemplateDebugPanel',
+    'flask_debugtoolbar.panels.logger.LoggingPanel',
+    'flask_debugtoolbar.panels.profiler.ProfilerDebugPanel',
+    'flask_debugtoolbar_lineprofilerpanel.panels.LineProfilerPanel'
+]
+
+# Initialize the debug toolbar
+toolbar = DebugToolbarExtension(app)
+
 
 @app.errorhandler(Exception)
 def handle_error(e):
@@ -36,9 +69,9 @@ def startup():
     def auto_update_index():
         while True:
             time.sleep(int(utils.get_config()['updateTimeInDays']) * 86400)
-            if utils.get_config()['autoUpdateIndex'] and utils.get_config()['updateTimeInDays'] > 0:
-                utils.log('Updating index automatically. To disable, set the \"autoUpdateIndex\" property in config.json to false.')
-                update()
+            # if utils.get_config()['autoUpdateIndex'] and utils.get_config()['updateTimeInDays'] > 0:
+            #     utils.log('Updating index automatically. To disable, set the \"autoUpdateIndex\" property in config.json to false.')
+            #     update()
 
     # Thread for automatically updaing the index periodically
     update_thread = threading.Thread(target=auto_update_index, daemon=True)
@@ -63,7 +96,6 @@ def startup():
 def handle_error(e):
     utils.log('[ERROR] Returning error ' + str(e) + "\n Traceback:\n" + traceback.format_exc())
     return jsonify(error=str(e)), 500   
-
 
 @app.route('/info', methods=['GET'])
 def info():
@@ -161,8 +193,13 @@ def incremental_remove_collection():
     except:
         raise
 
+@app.route('/test', methods=['GET'])
+@line_profile
+def SBOLExplore_test_endpoint():
+    return render_template('index.html')
 
 @app.route('/', methods=['GET'])
+@line_profile
 def sparql_search_endpoint():
     try:
         # make sure index is built, or throw exception
@@ -173,7 +210,13 @@ def sparql_search_endpoint():
 
         if sparql_query is not None:
             default_graph_uri = request.args.get('default-graph-uri')
-            response = jsonify(search.search(sparql_query, utils.get_uri2rank(), utils.get_clusters(), default_graph_uri))
+            response = jsonify(
+                search.search(
+                    sparql_query, 
+                    utils.get_uri2rank(), 
+                    utils.get_clusters(), 
+                    default_graph_uri
+                    ))
             return response
         else:
             return "<pre><h1>Welcome to SBOLExplorer! <br> <h2>The available indices in Elasticsearch are shown below:</h2></h1><br>"\
@@ -183,6 +226,7 @@ def sparql_search_endpoint():
             + "<br><br><br><br><a href=\"https://github.com/synbiodex/sbolexplorer\">Visit our GitHub repository!</a>"\
             + "<br><br>Any issues can be reported to our <a href=\"https://github.com/synbiodex/sbolexplorer/issues\">issue tracker.</a>"\
             + "<br><br>Used by <a href=\"https://github.com/synbiohub/synbiohub\">SynBioHub.</a>"
+            #return render_template('index.html')
     except:
         raise
 

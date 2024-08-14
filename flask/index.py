@@ -3,7 +3,6 @@ import utils
 import query
 import json
 
-
 def add_pagerank(parts_response, uri2rank):
     """
     Adds the pagerank score for each part
