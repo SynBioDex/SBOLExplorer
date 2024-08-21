@@ -186,7 +186,9 @@ def parse_sparql_query(sparql_query, is_count_query):
 
     # Construct es_query
     es_query = ' '.join(keywords).strip()
-    print("Hello es_query: ", es_query)
+    if not is_count_query:
+        print("Hello es_query: ", es_query)
+    # if is not count query, print
     
     return es_query, _from, criteria, offset, limit, sequence, flags
 
