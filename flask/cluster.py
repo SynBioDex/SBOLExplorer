@@ -6,29 +6,27 @@ import query
 from sys import platform
 
 config_manager = ConfigManager()
-uclust_identity = config_manager.load_config()['uclust_identity'] # how similar sequences in the same cluster must be
+config = config_manager.load_config()  # Load config once
+uclust_identity = config['uclust_identity']  # Get the uclust identity value
 logger_ = Logger()
 sequences_filename = 'dumps/sequences.fsa'
 
-if 'which_search' not in config_manager.load_config():
-    explorerConfig = config_manager.load_config()
-    explorerConfig['which_search'] = 'vsearch'
-    config_manager.load_config(explorerConfig)
+# Ensure 'which_search' is set in config
+if 'which_search' not in config:
+    config['which_search'] = 'vsearch'
+    config_manager.save_config(config)
 
-whichSearch = config_manager.load_config()['which_search']
+whichSearch = config['which_search']
 
-if platform == "linux" or platform == "linux2":
-    if whichSearch == 'usearch':
-        usearch_binary_filename = 'usearch/usearch10.0.240_i86linux32'
-    elif whichSearch == 'vsearch':
-        usearch_binary_filename = 'usearch/vsearch_linux'
+# Determine the correct binary filename based on OS and search tool
+usearch_binary_filename = None
+if platform.startswith("linux"):
+    usearch_binary_filename = 'usearch/vsearch_linux' if whichSearch == 'vsearch' else 'usearch/usearch10.0.240_i86linux32'
 elif platform == "darwin":
-    if whichSearch == 'usearch':
-        usearch_binary_filename = 'usearch/usearch11.0.667_i86osx32'
-    elif whichSearch == 'vsearch':
-        usearch_binary_filename = 'usearch/vsearch_macos'
+    usearch_binary_filename = 'usearch/vsearch_macos' if whichSearch == 'vsearch' else 'usearch/usearch11.0.667_i86osx32'
 else:
-    logger_.log("Sorry, your OS is not supported for sequence based-search.")
+    logger_.log("Sorry, your OS is not supported for sequence-based search.")
+    raise SystemExit
 
 uclust_results_filename = 'usearch/uclust_results.uc'
 
@@ -42,102 +40,60 @@ WHERE {
 }
 '''
 
-
 def write_fasta(sequences):
-    f = open(sequences_filename, 'w')
-    
-    for sequence in sequences:
-        f.write('>%s\n' % sequence['subject'])
-        f.write('%s\n' % sequence['sequence'])
-    
-    f.close()
-    
+    with open(sequences_filename, 'w') as f:
+        for sequence in sequences:
+            f.write(f">{sequence['subject']}\n{sequence['sequence']}\n")
 
 def run_uclust():
     args = [usearch_binary_filename, '-cluster_fast', sequences_filename, '-id', uclust_identity, '-sort', 'length', '-uc', uclust_results_filename]
-    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
-    popen.wait()
-    output = popen.stdout.read()
-    logger_.log(str(output), True)
-
+    result = subprocess.run(args, capture_output=True, text=True)
+    logger_.log(result.stdout, True)
 
 def analyze_uclust():
-    f = open(uclust_results_filename, 'r')
-    results = f.read()
-    
     total_parts = 0
     total_identity = 0.0
     hits = 0
 
-    lines = results.splitlines()
-    for line in lines:
-        line = line.split()
-        record_type = line[0]
-        
-        if record_type in ('H', 'S'):
-            total_parts += 1
+    with open(uclust_results_filename, 'r') as f:
+        for line in f:
+            parts = line.split()
+            record_type = parts[0]
+            if record_type in ('H', 'S'):
+                total_parts += 1
+                if record_type == 'H':
+                    total_identity += float(parts[3])
+                    hits += 1
 
-            if line[0] is 'H':
-                total_identity += float(line[3])
-                hits += 1
-    
-    f.close()
-    logger_.log('parts: ' + str(total_parts), True)
-    logger_.log('hits: ' + str(hits), True)
-
+    logger_.log(f'parts: {total_parts}', True)
+    logger_.log(f'hits: {hits}', True)
     if hits > 0:
-        logger_.log('average hit identity: ' + str(total_identity / hits), True)
-
+        logger_.log(f'average hit identity: {total_identity / hits}', True)
 
 def uclust2uris(fileName):
     uris = set()
-    
-    f = open(fileName, 'r')
-    results = f.read()
-    lines = results.splitlines()
-
-    for line in lines:
-        line = line.split()
-        
-        if line[0] is 'H':
-            partURI = line[9]
-
-            uris.add(partURI)
-
-    f.close()
-
+    with open(fileName, 'r') as f:
+        for line in f:
+            parts = line.split()
+            if parts[0] == 'H':
+                uris.add(parts[9])
     return uris
 
 def uclust2clusters():
-    # populate cluster2parts
     cluster2parts = {}
     
-    f = open(uclust_results_filename, 'r')
-    results = f.read()
-    lines = results.splitlines()
+    with open(uclust_results_filename, 'r') as f:
+        for line in f:
+            parts = line.split()
+            if parts[0] in ('H', 'S'):
+                part, cluster = parts[8], parts[1]
+                if cluster not in cluster2parts:
+                    cluster2parts[cluster] = set()
+                cluster2parts[cluster].add(part)
 
-    for line in lines:
-        line = line.split()
-        
-        if line[0] is 'H' or line[0] is 'S':
-            part, cluster = line[8], line[1]
-
-            if cluster not in cluster2parts:
-                cluster2parts[cluster] = set()
-            cluster2parts[cluster].add(part)
-
-    f.close()
-
-    # transform cluster2parts to clusters
-    clusters = {}
-
-    for cluster in cluster2parts:
-        parts = cluster2parts[cluster]
-        for part in parts:
-            clusters[part] = parts.difference({part})
+    clusters = {part: parts.difference({part}) for cluster, parts in cluster2parts.items() for part in parts}
 
     return clusters
-
 
 def update_clusters():
     logger_.log('------------ Updating clusters ------------', True)
@@ -151,6 +107,5 @@ def update_clusters():
     logger_.log('******** Running uclust complete ********', True)
 
     analyze_uclust()
-    logger_.log('------------ Successsfully updated clusters ------------\n', True)
+    logger_.log('------------ Successfully updated clusters ------------\n', True)
     return uclust2clusters()
-
