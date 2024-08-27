@@ -1,12 +1,14 @@
 from xml.etree import ElementTree
 import subprocess
-import utils
 import query
 import cluster
 import search
 from sys import platform
 import base64
 import tempfile
+from logger import Logger
+
+logger_ = Logger()
 
 
 # handling selection of VSEARCH binary
@@ -15,7 +17,7 @@ if platform == "linux" or platform == "linux2":
 elif platform == "darwin":
     vsearch_binary_filename = 'usearch/vsearch_macos'
 else:
-    utils.log("Sorry, your OS is not supported for sequence based-search.")
+    logger_.log("Sorry, your OS is not supported for sequence based-search.")
 
 # add valid flags to here
 globalFlags = {'maxaccepts': '50', 'id': '0.8', 'iddef': '2', 'maxrejects': '0', 'maxseqlength': '5000', 'minseqlength': '20'}
@@ -51,7 +53,7 @@ def run_vsearch_global(fileName):
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    utils.log(output)
+    logger_.log(output)
 
 def run_vsearch_exact(fileName):
     """
@@ -66,7 +68,7 @@ def run_vsearch_exact(fileName):
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    utils.log(output)
+    logger_.log(output)
 
 
 def append_flags_to_args(argsList, flags):
@@ -124,7 +126,7 @@ def sequence_search(userFlags, fileName):
     Returns:
         set -- search results by URI
     """
-    utils.log('Starting sequence search')
+    logger_.log('Starting sequence search')
 
     if "search_exact" in userFlags:
         add_exact_flags(userFlags)
@@ -132,7 +134,7 @@ def sequence_search(userFlags, fileName):
     else:
         add_global_flags(userFlags)
         run_vsearch_global(fileName)
-    utils.log('Sequence search complete')
+    logger_.log('Sequence search complete')
 
     return cluster.uclust2uris(fileName[:-4] + '.uc')
 

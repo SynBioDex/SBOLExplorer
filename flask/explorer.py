@@ -7,19 +7,27 @@ import traceback
 import logging
 import threading
 import time
-from flask_debugtoolbar import DebugToolbarExtension
-from flask_debugtoolbar_lineprofilerpanel.profile import line_profile
-
 import cluster
 import pagerank
 import index
 import search
-import utils
 import query
+from configManager import ConfigManager
+from dataManager import DataManager
+from elasticsearchManager import ElasticsearchManager
+from logger import Logger
+
+from flask_debugtoolbar import DebugToolbarExtension
+from flask_debugtoolbar_lineprofilerpanel.profile import line_profile
 
 # Configure logging, This will affect all loggers in your application, not just the Werkzeug logger.
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
+
+config_manager = ConfigManager()
+data_manager = DataManager()
+elasticsearch_manager = ElasticsearchManager(config_manager)
+logger_ = Logger()
 
 app = Flask(__name__)
 app.config.update(
@@ -54,11 +62,11 @@ def handle_error(e):
 @app.before_first_request
 def startup():
     def auto_update_index():
-        update_interval = int(utils.get_config().get('updateTimeInDays', 0)) * 86400
+        update_interval = int(config_manager.load_config().get('updateTimeInDays', 0)) * 86400
         while True:
             time.sleep(update_interval)
             # Implement your update logic here
-            if utils.get_config().get('autoUpdateIndex', False):
+            if config_manager.load_config().get('autoUpdateIndex', False):
                 update_index()
 
     # Start the background thread for auto-updating the index
@@ -70,63 +78,61 @@ def startup():
         if os.path.exists(log_file) and os.path.getsize(log_file) > 20000000:  # 20 MB
             os.remove(log_file)
 
-    utils.log('SBOLExplorer started :)')
+    logger_.log('SBOLExplorer started :)')
 
     # Check and create index if necessary
     try:
-        es = utils.get_es()
-        index_name = utils.get_config().get('elasticsearch_index_name')
+        es = elasticsearch_manager.get_es()
+        index_name = config_manager.load_config().get('elasticsearch_index_name')
         if not es.indices.exists(index=index_name):
-            utils.log('Index not found, creating new index.')
+            logger_.log('Index not found, creating new index.')
             update_index()
     except Exception as e:
         log.error(f'Error during startup: {e}')
         raise
 
 def update_index():
-    utils.log_indexing('============ STARTING INDEXING ============\n\n')
-    utils.log('============ STARTING INDEXING ============\n\n')
-    utils.save_update_start_time()
+    logger_.log('============ STARTING INDEXING ============\n\n', True)
+    config_manager.save_update_start_time()
 
     clusters = cluster.update_clusters()
-    utils.save_clusters(clusters)
+    data_manager.save_clusters(clusters)
     
     uri2rank = pagerank.update_pagerank()
-    utils.save_uri2rank(uri2rank)
+    data_manager.save_uri2rank(uri2rank)
 
-    index.update_index(utils.get_uri2rank())
+    index.update_index(data_manager.get_uri2rank())
     
     query.memoized_query_sparql.cache_clear()
-    utils.log_indexing('Cache cleared')
+    logger_.log('Cache cleared', True)
 
-    utils.save_update_end_time()
-    utils.log_indexing('============ INDEXING COMPLETED ============\n\n')
-    utils.log('============ INDEXING COMPLETED ============\n\n')
+    config_manager.save_update_end_time()
+    logger_.log('============ INDEXING COMPLETED ============\n\n', True)
 
 @app.route('/info', methods=['GET'])
 def info():
-    utils.log('Explorer up!!! Virtuoso ' + str(query.memoized_query_sparql.cache_info()))
-    return utils.get_log()
+    logger_.log('Explorer up!!! Virtuoso ' + str(query.memoized_query_sparql.cache_info()))
+    return logger_.get_log()
 
 @app.route('/indexinginfo', methods=['GET'])
 def indexinginfo():
-    return utils.get_indexing_log()
+    return logger_.get_indexing_log()
 
 @app.route('/config', methods=['POST', 'GET'])
 def config_route():
     if request.method == 'POST':
         new_config = request.get_json()
-        utils.set_config(new_config)
-        utils.log('Successfully updated config')
+        config_manager.save_config(new_config)
+        logger_.log('Successfully updated config')
 
-    return jsonify(utils.get_config())
+    return jsonify(config_manager.load_config())
 
 @app.route('/update', methods=['GET'])
 def update():
     try:
         subject = request.args.get('subject')
         if subject:
-            index.refresh_index(subject, utils.get_uri2rank())
+            index.refresh_index(subject, data_manager.get_uri2rank())
             success_message = f'Successfully refreshed: {subject}'
         else:
             update_index()
@@ -140,9 +146,9 @@ def update():
 def incremental_update():
     try:
         updates = request.get_json()
-        index.incremental_update(updates, utils.get_uri2rank())
+        index.incremental_update(updates, data_manager.get_uri2rank())
         success_message = 'Successfully incrementally updated parts'
-        utils.log(success_message)
+        logger_.log(success_message)
         return success_message
     except Exception as e:
         log.error(f'Error during incremental update: {e}')
@@ -154,7 +160,7 @@ def incremental_remove():
         subject = request.args.get('subject')
         index.incremental_remove(subject)
         success_message = f'Successfully incrementally removed: {subject}'
-        utils.log(success_message)
+        logger_.log(success_message)
         return success_message
     except Exception as e:
         log.error(f'Error during incremental remove: {e}')
@@ -167,7 +173,7 @@ def incremental_remove_collection():
         uri_prefix = request.args.get('uriPrefix')
         index.incremental_remove_collection(subject, uri_prefix)
         success_message = f'Successfully incrementally removed collection and members: {subject}'
-        utils.log(success_message)
+        logger_.log(success_message)
         return success_message
     except Exception as e:
         log.error(f'Error during incremental remove collection: {e}')
@@ -182,8 +188,8 @@ def SBOLExplore_test_endpoint():
 @line_profile
 def sparql_search_endpoint():
     try:
-        es = utils.get_es()
-        index_name = utils.get_config().get('elasticsearch_index_name')
+        es = elasticsearch_manager.get_es()
+        index_name = config_manager.load_config().get('elasticsearch_index_name')
         if not es.indices.exists(index=index_name) or es.cat.indices(format='json')[0]['health'] == 'red':
             abort(503, 'Elasticsearch is not working or the index does not exist.')
 
@@ -192,15 +198,15 @@ def sparql_search_endpoint():
             default_graph_uri = request.args.get('default-graph-uri')
             response = jsonify(search.search(
                 sparql_query, 
-                utils.get_uri2rank(), 
-                utils.get_clusters(), 
+                data_manager.get_uri2rank(), 
+                data_manager.get_clusters(), 
                 default_graph_uri
             ))
             return response
         return "<pre><h1>Welcome to SBOLExplorer! <br> <h2>The available indices in Elasticsearch are shown below:</h2></h1><br>"\
-            + str(utils.get_es().cat.indices(format='json'))\
+            + str(elasticsearch_manager.get_es().cat.indices(format='json'))\
             + "<br><br><h3>The config options are set to:</h3><br>"\
-            + str(utils.get_config())\
+            + str(config_manager.load_config())\
             + "<br><br><br><br><a href=\"https://github.com/synbiodex/sbolexplorer\">Visit our GitHub repository!</a>"\
             + "<br><br>Any issues can be reported to our <a href=\"https://github.com/synbiodex/sbolexplorer/issues\">issue tracker.</a>"\
             + "<br><br>Used by <a href=\"https://github.com/synbiohub/synbiohub\">SynBioHub.</a>"
@@ -212,8 +218,8 @@ def sparql_search_endpoint():
 @app.route('/search', methods=['GET'])
 def search_by_string():
     try:
-        es = utils.get_es()
-        index_name = utils.get_config().get('elasticsearch_index_name')
+        es = elasticsearch_manager.get_es()
+        index_name = config_manager.load_config().get('elasticsearch_index_name')
         if not es.indices.exists(index=index_name) or es.cat.indices(format='json')[0]['health'] == 'red':
             abort(503, 'Elasticsearch is not working or the index does not exist.')
 
@@ -225,4 +231,4 @@ def search_by_string():
         raise
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True) # threaded=True

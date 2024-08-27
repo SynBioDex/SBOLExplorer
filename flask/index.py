@@ -1,7 +1,13 @@
 from elasticsearch import helpers
-import utils
+from configManager import ConfigManager
+from elasticsearchManager import ElasticsearchManager
 import query
 import json
+from logger import Logger
+
+config_manager = ConfigManager()
+elasticsearch_manager = ElasticsearchManager(config_manager)
+logger_ = Logger()
 
 def add_pagerank(parts_response, uri2rank):
     """
@@ -94,9 +100,9 @@ def create_parts_index(index_name):
         index_name {String} -- Name of the new index
     """
 
-    if utils.get_es().indices.exists(index_name):
-        utils.log_indexing('Index already exists -> deleting')
-        utils.get_es().indices.delete(index=index_name)
+    if elasticsearch_manager.get_es().indices.exists(index_name):
+        logger_.log('Index already exists -> deleting', True)
+        elasticsearch_manager.get_es().indices.delete(index=index_name)
 
     body = {
         'mappings': {
@@ -116,8 +122,8 @@ def create_parts_index(index_name):
         }
 
     }
-    utils.get_es().indices.create(index=index_name, body=body)
-    utils.log_indexing('Index created')
+    elasticsearch_manager.get_es().indices.create(index=index_name, body=body)
+    logger_.log('Index created', True)
 
 
 def bulk_index_parts(parts_response, index_name):
@@ -143,12 +149,12 @@ def bulk_index_parts(parts_response, index_name):
 
         actions.append(action)
 
-    utils.log_indexing('Bulk indexing')
+    logger_.log('Bulk indexing', True)
     try:
-        stats = helpers.bulk(utils.get_es(), actions)
-        utils.log_indexing('Bulk indexing complete')
+        stats = helpers.bulk(elasticsearch_manager.get_es(), actions)
+        logger_.log('Bulk indexing complete', True)
     except:
-        utils.log_indexing('[ERROR] Error_messages: ' + '\n'.join(stats[1]))
+        logger_.log('[ERROR] Error_messages: ' + '\n'.join(stats[1]), True)
         raise Exception("Bulk indexing failed")
 
 def update_index(uri2rank):
@@ -160,15 +166,15 @@ def update_index(uri2rank):
     Returns:
 
     """
-    index_name = utils.get_config()['elasticsearch_index_name']
+    index_name = config_manager.load_config()['elasticsearch_index_name']
 
-    utils.log_indexing('------------ Updating index ------------')
+    logger_.log('------------ Updating index ------------', True)
 
-    utils.log_indexing('******** Query for parts ********')
+    logger_.log('******** Query for parts ********', True)
     parts_response = query.query_parts(indexing = True)
-    utils.log_indexing('******** Query for parts complete ********')
+    logger_.log('******** Query for parts complete ********', True)
 
-    utils.log_indexing('******** Adding parts to new index ********')
+    logger_.log('******** Adding parts to new index ********', True)
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
     add_roles(parts_response)
@@ -176,9 +182,9 @@ def update_index(uri2rank):
     create_parts_index(index_name)
     bulk_index_parts(parts_response, index_name)
 
-    utils.log_indexing('******** Finished adding ' + str(len(parts_response)) + ' parts to index ********')
+    logger_.log('******** Finished adding ' + str(len(parts_response)) + ' parts to index ********', True)
 
-    utils.log_indexing('------------ Successfully updated index ------------\n')
+    logger_.log('------------ Successfully updated index ------------\n', True)
 
 
 def delete_subject(subject):
@@ -190,7 +196,7 @@ def delete_subject(subject):
     Returns:
 
     """
-    index_name = utils.get_config()['elasticsearch_index_name']
+    index_name = config_manager.load_config()['elasticsearch_index_name']
 
     body = {
         'query': {
@@ -202,13 +208,13 @@ def delete_subject(subject):
         },
         'conflicts': 'proceed'
     }
-    utils.get_es().delete_by_query(index=index_name, doc_type=index_name, body=body)
+    elasticsearch_manager.get_es().delete_by_query(index=index_name, doc_type=index_name, body=body)
 
 
 def index_part(part):
     delete_subject(part['subject'])
-    index_name = utils.get_config()['elasticsearch_index_name']
-    utils.get_es().index(index=index_name, doc_type=index_name, id=part['subject'], body=part)
+    index_name = config_manager.load_config()['elasticsearch_index_name']
+    elasticsearch_manager.get_es().index(index=index_name, doc_type=index_name, id=part['subject'], body=part)
 
 
 def refresh_index(subject, uri2rank):

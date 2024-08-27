@@ -1,19 +1,21 @@
 from xml.etree import ElementTree
 import subprocess
-import utils
+from configManager import ConfigManager
+from logger import Logger
 import query
 from sys import platform
 
-
-uclust_identity = utils.get_config()['uclust_identity'] # how similar sequences in the same cluster must be
+config_manager = ConfigManager()
+uclust_identity = config_manager.load_config()['uclust_identity'] # how similar sequences in the same cluster must be
+logger_ = Logger()
 sequences_filename = 'dumps/sequences.fsa'
 
-if 'which_search' not in utils.get_config():
-    explorerConfig = utils.get_config()
+if 'which_search' not in config_manager.load_config():
+    explorerConfig = config_manager.load_config()
     explorerConfig['which_search'] = 'vsearch'
-    utils.set_config(explorerConfig)
+    config_manager.load_config(explorerConfig)
 
-whichSearch = utils.get_config()['which_search']
+whichSearch = config_manager.load_config()['which_search']
 
 if platform == "linux" or platform == "linux2":
     if whichSearch == 'usearch':
@@ -26,7 +28,7 @@ elif platform == "darwin":
     elif whichSearch == 'vsearch':
         usearch_binary_filename = 'usearch/vsearch_macos'
 else:
-    utils.log("Sorry, your OS is not supported for sequence based-search.")
+    logger_.log("Sorry, your OS is not supported for sequence based-search.")
 
 uclust_results_filename = 'usearch/uclust_results.uc'
 
@@ -56,7 +58,7 @@ def run_uclust():
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    utils.log_indexing(str(output))
+    logger_.log(str(output), True)
 
 
 def analyze_uclust():
@@ -80,11 +82,11 @@ def analyze_uclust():
                 hits += 1
     
     f.close()
-    utils.log_indexing('parts: ' + str(total_parts))
-    utils.log_indexing('hits: ' + str(hits))
+    logger_.log('parts: ' + str(total_parts), True)
+    logger_.log('hits: ' + str(hits), True)
 
     if hits > 0:
-        utils.log_indexing('average hit identity: ' + str(total_identity / hits))
+        logger_.log('average hit identity: ' + str(total_identity / hits), True)
 
 
 def uclust2uris(fileName):
@@ -138,17 +140,17 @@ def uclust2clusters():
 
 
 def update_clusters():
-    utils.log_indexing('------------ Updating clusters ------------')
-    utils.log_indexing('******** Query for sequences ********')
+    logger_.log('------------ Updating clusters ------------', True)
+    logger_.log('******** Query for sequences ********', True)
     sequences_response = query.query_sparql(sequence_query)
-    utils.log_indexing('******** Query for sequences complete ********')
+    logger_.log('******** Query for sequences complete ********', True)
     write_fasta(sequences_response)
 
-    utils.log_indexing('******** Running uclust ********')
+    logger_.log('******** Running uclust ********', True)
     run_uclust()
-    utils.log_indexing('******** Running uclust complete ********')
+    logger_.log('******** Running uclust complete ********', True)
 
     analyze_uclust()
-    utils.log_indexing('------------ Successsfully updated clusters ------------\n')
+    logger_.log('------------ Successsfully updated clusters ------------\n', True)
     return uclust2clusters()
 

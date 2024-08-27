@@ -1,8 +1,11 @@
 from xml.etree import ElementTree
 import numpy as np
-import utils
 import query
+from logger import Logger
+from configManager import ConfigManager
 
+config_manager = ConfigManager()
+logger_ = Logger()
 
 link_query = '''
 SELECT DISTINCT ?parent ?child
@@ -116,7 +119,7 @@ def pagerank(g, s=0.85, tolerance=0.001):
 
 
     if n == 0:
-        utils.log_indexing('no iterations: empty graph')
+        logger_.log('no iterations: empty graph', True)
         return p
     
     iteration = 1
@@ -134,7 +137,7 @@ def pagerank(g, s=0.85, tolerance=0.001):
         new_p = v / np.sum(v)
             
         delta = np.sum(np.abs(p - new_p))
-        utils.log_indexing('Iteration ' + str(iteration) + ': L1 norm delta is ' + str(delta))
+        logger_.log('Iteration ' + str(iteration) + ': L1 norm delta is ' + str(delta), True)
         
         p = new_p
         iteration += 1
@@ -155,22 +158,22 @@ def make_uri2rank(pr_vector, uri2index):
 
 
 def update_pagerank():
-    utils.log_indexing('------------ Updating pagerank ------------')
-    utils.log_indexing('******** Query for uris ********')
+    logger_.log('------------ Updating pagerank ------------', True)
+    logger_.log('******** Query for uris ********', True)
     uri_response = query.query_sparql(uri_query)
-    utils.log_indexing('******** Query for uris complete ********')
+    logger_.log('******** Query for uris complete ********', True)
     adjacency_list = populate_uris(uri_response)
 
-    utils.log_indexing('******** Query for links ********')
+    logger_.log('******** Query for links ********', True)
     link_response = query.query_sparql(link_query)
-    utils.log_indexing('******** Query for links complete ********')
+    logger_.log('******** Query for links complete ********', True)
     populate_links(link_response, adjacency_list)
 
     g = graph(adjacency_list)
-    utils.log_indexing('******** Running pagerank ********')
-    pr = pagerank(g, tolerance=float(utils.get_config()['pagerank_tolerance']))
-    utils.log_indexing('******** Running pagerank complete ********')
-    utils.log_indexing('------------ Successfully updated pagerank ------------\n')
+    logger_.log('******** Running pagerank ********', True)
+    pr = pagerank(g, tolerance=float(config_manager.load_config()['pagerank_tolerance']))
+    logger_.log('******** Running pagerank complete ********', True)
+    logger_.log('------------ Successfully updated pagerank ------------\n', True)
     pr_vector = np.squeeze(np.asarray(pr))
 
     # after squeeze, make sure it at least has a dimension in the case that there is only one element

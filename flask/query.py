@@ -2,8 +2,15 @@ import requests
 import urllib.parse
 from functools import lru_cache
 import json
-import utils
+from wor_client import WORClient
 import re
+from configManager import ConfigManager
+from logger import Logger
+
+config_manager = ConfigManager()
+logger_ = Logger()
+wor_client_ = WORClient()
+
 
 
 def query_parts(_from = '', criteria = '', indexing = False):
@@ -67,10 +74,10 @@ def query_sparql(query):
     Returns:
 
     """
-    endpoints = [utils.get_config()['sparql_endpoint']]
+    endpoints = [config_manager.load_config()['sparql_endpoint']]
 
-    if utils.get_config()['distributed_search']:
-        instances = utils.get_wor()
+    if config_manager.load_config()['distributed_search']:
+        instances = wor_client_.get_wor_instance()
         for instance in instances:
             endpoints.append(instance['instanceUrl'] + '/sparql?')
 
@@ -80,7 +87,7 @@ def query_sparql(query):
         try:
             results.extend(page_query(query, endpoint))
         except:
-            utils.log('[ERROR] failed querying:' + endpoint)
+            logger_.log('[ERROR] failed querying:' + endpoint)
             raise Exception("Endpoint not responding")
 
     return deduplicate_results(results)
@@ -113,7 +120,7 @@ def page_query(query, endpoint):
     Returns: List of parts
 
     """
-    utils.log('Current endpoint: ' + endpoint)
+    logger_.log('Current endpoint: ' + endpoint)
 
     bar = [
     "[        ]",
@@ -136,7 +143,7 @@ def page_query(query, endpoint):
     ]
     bar_counter = 0
 
-    if endpoint != utils.get_config()['sparql_endpoint']:
+    if endpoint != config_manager.load_config()['sparql_endpoint']:
         query = re.sub(r'''FROM.*\n''', '', query)
 
     query_prefix = '''
@@ -187,8 +194,8 @@ def send_query(query, endpoint):
     """
     params = {'query': query}
 
-    if endpoint == utils.get_config()['sparql_endpoint']:
-        params['default-graph-uri'] = '' # utils.get_config()['synbiohub_public_graph']
+    if endpoint == config_manager.load_config()['sparql_endpoint']:
+        params['default-graph-uri'] = '' # config_manager.load_config()['synbiohub_public_graph']
 
     url = endpoint + urllib.parse.urlencode(params)
     headers = {'Accept': 'application/json'}
@@ -196,12 +203,12 @@ def send_query(query, endpoint):
     try:
         r = requests.get(url, headers=headers)
     except Exception as e:
-        utils.log("[ERROR] exception when connecting: " + str(e))
+        logger_.log("[ERROR] exception when connecting: " + str(e))
         raise Exception("Local SynBioHub isn't responding")
 
     if r.status_code != 200:
-        utils.log('[ERROR] Got status code when querying: ' + str(r.status_code))
-        utils.log(r.text)
+        logger_.log('[ERROR] Got status code when querying: ' + str(r.status_code))
+        logger_.log(r.text)
         raise Exception(url + ' is not responding')
 
     results = []

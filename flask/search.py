@@ -1,8 +1,16 @@
 import re
 from typing import List, Dict, Tuple, Optional
-import utils
 import query
 import sequencesearch
+from wor_client import WORClient
+from elasticsearchManager import ElasticsearchManager
+from configManager import ConfigManager
+from logger import Logger
+
+config_manager = ConfigManager()
+elasticsearch_manager = ElasticsearchManager(config_manager)
+logger_ = Logger()
+wor_client_ = WORClient()
 
 # Compile regex patterns
 FROM_COUNT_PATTERN = re.compile(r'SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {')
@@ -53,9 +61,9 @@ def search_es(es_query: str) -> Dict:
         'size': 10000
     }
     try:
-        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
     except Exception as e:
-        utils.log(f"ES search failed: {e}")
+        logger_.log(f"ES search failed: {e}")
         raise
 
 def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
@@ -79,9 +87,9 @@ def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
         'size': limit
     }
     try:
-        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
     except Exception as e:
-        utils.log(f"ES search failed: {e}")
+        logger_.log(f"ES search failed: {e}")
         raise
 
 def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Dict:
@@ -123,9 +131,9 @@ def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Di
         'size': 10000
     }
     try:
-        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
     except Exception as e:
-        utils.log(f"ES search failed: {e}")
+        logger_.log(f"ES search failed: {e}")
         raise
 
 def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]) -> Dict:
@@ -153,9 +161,9 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]) -> Dict
         'size': 10000
     }
     try:
-        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
     except Exception as e:
-        utils.log(f"ES search failed: {e}")
+        logger_.log(f"ES search failed: {e}")
         raise
 def parse_sparql_query(sparql_query, is_count_query):
     # Find FROM clause
@@ -208,8 +216,8 @@ def extract_allowed_graphs(_from: str, default_graph_uri: str) -> List[str]:
     Extracts the allowed graphs to search over.
     """
     allowed_graphs = [default_graph_uri] if not _from else [graph.strip()[1:-1] for graph in _from.split('FROM') if graph.strip()]
-    if utils.get_config()['distributed_search']:
-        allowed_graphs.extend(instance['instanceUrl'] + '/public' for instance in utils.get_wor())
+    if config_manager.load_config()['distributed_search']:
+        allowed_graphs.extend(instance['instanceUrl'] + '/public' for instance in wor_client_.get_wor_instance())
     return allowed_graphs
 
 def is_count_query(sparql_query: str) -> bool:
@@ -510,7 +518,7 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
                                   else search_es_allowed_subjects(es_query, allowed_subjects))
 
             bindings = create_bindings(es_allowed_subject, clusters, allowed_graphs, allowed_subjects)
-            utils.log('Advanced string search complete.')
+            logger_.log('Advanced string search complete.')
 
     bindings.sort(key=lambda b: b['order_by'], reverse=True)
     return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
