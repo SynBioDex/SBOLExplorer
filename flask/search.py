@@ -62,13 +62,20 @@ def search_es(es_query: str) -> Dict:
     }
     try:
         return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
-    except Exception as e:
-        logger_.log(f"ES search failed: {e}")
+    except:
+        logger_.log("search_es(es_query: str)")
         raise
 
 def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
     """
     Empty string search based solely on pagerank.
+    Arguments:
+        offset {int} -- Offset for search results
+        limit {int} -- Size of search
+        allowed_graphs {List} -- List of allowed graphs to search on
+    
+    Returns:
+        List -- List of search results
     """
     query = {'term': {'graph': allowed_graphs[0]}} if len(allowed_graphs) == 1 else {'terms': {'graph': allowed_graphs}}
 
@@ -88,13 +95,19 @@ def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
     }
     try:
         return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
-    except Exception as e:
-        logger_.log(f"ES search failed: {e}")
+    except:
+        logger_.log("empty_search_es(offset: int, limit: int, allowed_graphs: List[str])")
         raise
 
 def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Dict:
     """
     String query for ES searches limited to allowed parts.
+    Arguments:
+        es_query {string} -- String to search for
+        allowed_subjects {list} - list of allowed subjects from Virtuoso
+    
+    Returns:
+        List -- List of all search results
     """
     body = {
         'query': {
@@ -116,7 +129,7 @@ def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Di
                                 'operator': 'or',
                                 'fuzziness': 'AUTO'
                             }},
-                            {'ids': {'values': allowed_subjects}}
+                            {'ids': {'values': list(allowed_subjects)}}
                         ]
                     }
                 },
@@ -124,21 +137,26 @@ def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Di
                     'script': {
                         'source': "_score * Math.log(doc['pagerank'].value + 1)"
                     }
-                }
-            }
+                },
+            },
         },
         'from': 0,
         'size': 10000
     }
     try:
         return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
-    except Exception as e:
-        logger_.log(f"ES search failed: {e}")
+    except:
+        logger_.log("search_es_allowed_subjects(es_query: str, allowed_subjects: List[str])")
         raise
 
-def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]) -> Dict:
+def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
     """
     ES search purely limited to allowed parts.
+    Arguments:
+        allowed_subjects {list} - list of allowed subjects from Virtuoso
+    
+    Returns:
+        List -- List of all search results
     """
     body = {
         'query': {
@@ -146,7 +164,7 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]) -> Dict
                 'query': {
                     'bool': {
                         'must': [
-                            {'ids': {'values': allowed_subjects}}
+                            {'ids': {'values': list(allowed_subjects)}}
                         ]
                     }
                 },
@@ -154,16 +172,16 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]) -> Dict
                     'script': {
                         'source': "_score * Math.log(doc['pagerank'].value + 1)"
                     }
-                }
-            }
+                },
+            },
         },
         'from': 0,
         'size': 10000
     }
     try:
         return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
-    except Exception as e:
-        logger_.log(f"ES search failed: {e}")
+    except:
+        logger_.log("search_es_allowed_subjects_empty_string")
         raise
 def parse_sparql_query(sparql_query, is_count_query):
     # Find FROM clause
@@ -209,13 +227,18 @@ def extract_query(sparql_query):
         List -- List of information extracted
     """
     return parse_sparql_query(sparql_query, is_count_query(sparql_query))
-    
-    
+
 def extract_allowed_graphs(_from: str, default_graph_uri: str) -> List[str]:
     """
     Extracts the allowed graphs to search over.
+    Arguments:
+        _from {string} -- Graph where search originated
+        default_graph_uri {string} -- The default graph URI pulled from SBH
+    
+    Returns:
+        List -- List of allowed graphs
     """
-    allowed_graphs = [default_graph_uri] if not _from else [graph.strip()[1:-1] for graph in _from.split('FROM') if graph.strip()]
+    allowed_graphs = [default_graph_uri] if not _from else [graph.strip()[1:-1] for graph in _from.split('FROM') if graph.strip()[1:-1]]
     if config_manager.load_config()['distributed_search']:
         allowed_graphs.extend(instance['instanceUrl'] + '/public' for instance in wor_client_.get_wor_instance())
     return allowed_graphs
@@ -226,6 +249,14 @@ def is_count_query(sparql_query: str) -> bool:
 def create_response(count: int, bindings: List[Dict], return_count: bool) -> Dict:
     """
     Creates response to be sent back to SBH.
+    
+    Arguments:
+        count {int} -- ?
+        bindings {Dict} -- The bindings
+        return_count {int} -- ?
+    
+    Returns:
+        ? -- ?
     """
     if return_count:
         return {
@@ -254,6 +285,24 @@ def create_binding(subject: str, displayId: Optional[str], version: Optional[int
                    percentMatch: float = -1, strandAlignment: str = 'N/A', CIGAR: str = 'N/A') -> Dict:
     """
     Creates bindings to be sent to SBH.
+        Arguments:
+        subject {string} -- URI of part
+        displayId {string} -- DisplayId of part
+        version {int} -- Version of part
+        name {string} -- Name of part
+        description {string} -- Description of part
+        _type {string} -- SBOL type of part
+        role {string} -- S.O. role of part
+        order_by {?} -- ?
+    
+    Keyword Arguments:
+        percentMatch {number} -- Percent match of query part to the target part (default: {-1})
+        strandAlignment {str} -- Strand alignment of the query part relatve to the target part (default: {'N/A'})
+        CIGAR {str} -- Alignment of query part relative to the target part (default: {'N/A'})
+    
+    Returns:
+        Dict -- Part and its information
+    
     """
     binding = {}
     attributes = {
@@ -292,6 +341,10 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects=None
     Returns:
         Dict -- All parts and their corresponding information
     """
+    if es_response is None or 'hits' not in es_response or 'hits' not in es_response['hits']:
+        logger_.log("[ERROR] Elasticsearch response is None or malformed.")
+        return []
+    
     bindings = []
     cluster_duplicates = set()
 
@@ -314,7 +367,7 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects=None
         elif subject in clusters:
             cluster_duplicates.update(clusters[subject])
 
-        if 'http://sbols.org/v2#Sequence' in _source.get('type', ''):
+        if _source.get('type') is not None and 'http://sbols.org/v2#Sequence' in _source.get('type'):
             _score /= 10.0
 
         binding = create_binding(
@@ -348,7 +401,8 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False,
         Dict -- Binding of parts
     """
     bindings = []
-    for part in criteria_response:
+    parts = (p for p in criteria_response if p.get('role') is None or 'http://wiki.synbiohub.org' in p.get('role'))
+    for part in parts:
         subject = part.get('subject')
         pagerank = uri2rank.get(subject, 1)
 
@@ -571,5 +625,3 @@ def filter_sequence_search_subjects(_from, uris):
     """
     from_uris = set(re.findall(r"\<([A-Za-z0-9:\/.]+)\>*", _from))
     return [uri for uri in uris if any(f in uri for f in from_uris)]
-
-
