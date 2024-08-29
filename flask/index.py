@@ -59,12 +59,13 @@ def add_roles(parts_response, term_list):
                 if so_term in term['id']:
                     keywords_list.append(term['lbl'])
                     synonyms = term.get('synonyms', [])
-                    for synonym in synonyms:
-                        # remove the annoying header from the synonyms
-                        if 'INSDC' in synonym:
-                            synonym = synonym.replace('INSDC_qualifier:', '')
-                        if synonym not in keywords_list:
-                            keywords_list.append(synonym)
+                    if synonyms:
+                        for synonym in synonyms:
+                            # remove the annoying header from the synonyms
+                            if 'INSDC' in synonym:
+                                synonym = synonym.replace('INSDC_qualifier:', '')
+                            if synonym not in keywords_list:
+                                keywords_list.append(synonym)
                             
             part['keywords'] += ' ' + ' '.join(keywords_list)
 
@@ -93,16 +94,25 @@ def create_parts_index(index_name):
 
     body = {
         'mappings': {
-            'properties': {
-                'subject': {'type': 'keyword'},
-                'graph': {'type': 'keyword'}
+            index_name: {
+                'properties': {
+                    'subject': {
+                        'type': 'keyword'
+                    },
+                    'graph': {
+                        'type': 'keyword'
+                    }
+                },
             }
         },
         'settings': {
             'number_of_shards': 1
         }
     }
+    logger_.log("index_name: ", index_name) # empty
+    logger_.log("body: ", body) # empty
     es.indices.create(index=index_name, body=body)
+    
     logger_.log('Index created', True)
 
 
@@ -120,6 +130,7 @@ def bulk_index_parts(parts_response, index_name):
         for part in parts_response:
             yield {
                 '_index': index_name,
+                '_type': index_name,
                 '_id': part['subject'],
                 '_source': part
             }
@@ -178,20 +189,20 @@ def delete_subject(subject):
         'query': {
             'bool': {
                 'must': [
-                    {'ids': {'values': [subject]}}
+                    {'ids': {'values': subject}}
                 ]
             }
         },
         'conflicts': 'proceed'
     }
-    es.delete_by_query(index=index_name, body=body)
+    es.delete_by_query(index=index_name, doc_type=index_name, body=body)
 
 
 def index_part(part):
     delete_subject(part['subject'])
     index_name = config['elasticsearch_index_name']
     es = elasticsearch_manager.get_es()
-    es.index(index=index_name, id=part['subject'], body=part)
+    es.index(index=index_name, doc_type=index_name, id=part['subject'], body=part)
 
 
 def refresh_index(subject, uri2rank):
