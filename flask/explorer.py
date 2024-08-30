@@ -17,8 +17,6 @@ from dataManager import DataManager
 from elasticsearchManager import ElasticsearchManager
 from logger import Logger
 
-from flask_debugtoolbar import DebugToolbarExtension
-from flask_debugtoolbar_lineprofilerpanel.profile import line_profile
 
 # Configure logging, This will affect all loggers in your application, not just the Werkzeug logger.
 log = logging.getLogger('werkzeug')
@@ -30,26 +28,7 @@ elasticsearch_manager = ElasticsearchManager(config_manager)
 logger_ = Logger()
 
 app = Flask(__name__)
-app.config.update(
-    SECRET_KEY='your-secret-key',  # Required for the debug toolbar
-    DEBUG=True,
-    DEBUG_TB_INTERCEPT_REDIRECTS=False,
-    DEBUG_TB_PROFILER_ENABLED=True,
-    DEBUG_TB_PANELS=[
-        'flask_debugtoolbar.panels.versions.VersionDebugPanel',
-        'flask_debugtoolbar.panels.timer.TimerDebugPanel',
-        'flask_debugtoolbar.panels.headers.HeaderDebugPanel',
-        'flask_debugtoolbar.panels.request_vars.RequestVarsDebugPanel',
-        'flask_debugtoolbar.panels.config_vars.ConfigVarsDebugPanel',
-        'flask_debugtoolbar.panels.template.TemplateDebugPanel',
-        'flask_debugtoolbar.panels.logger.LoggingPanel',
-        'flask_debugtoolbar.panels.profiler.ProfilerDebugPanel',
-        'flask_debugtoolbar_lineprofilerpanel.panels.LineProfilerPanel'
-    ]
-)
 
-# Initialize the debug toolbar
-toolbar = DebugToolbarExtension(app)
 
 # Error handler
 @app.errorhandler(Exception)
@@ -180,12 +159,10 @@ def incremental_remove_collection():
         raise
 
 @app.route('/test', methods=['GET'])
-@line_profile
 def SBOLExplore_test_endpoint():
     return render_template('index.html')
 
 @app.route('/', methods=['GET'])
-@line_profile
 def sparql_search_endpoint():
     try:
         es = elasticsearch_manager.get_es()
@@ -231,4 +208,4 @@ def search_by_string():
         raise
 
 if __name__ == "__main__":
-    app.run(debug=True) # threaded=True
+    app.run(debug=False, threaded=True) # threaded=True
