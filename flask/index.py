@@ -46,8 +46,6 @@ def add_roles(parts_response, term_list):
         parts_response {List} -- List containing all parts from the SPARQL query
         term_list {List} -- List of terms from the SO-Ontologies
     """
-    print("parts_response: ", len(parts_response))
-    print("term_list: ", len(term_list))
     for part in parts_response: 
         # Split the CSV of roles from sparql
         role = part.get('role')
@@ -109,8 +107,6 @@ def create_parts_index(index_name):
             'number_of_shards': 1
         }
     }
-    logger_.log("index_name: ", index_name) # empty
-    logger_.log("body: ", body) # empty
     es.indices.create(index=index_name, body=body)
     
     logger_.log('Index created', True)
