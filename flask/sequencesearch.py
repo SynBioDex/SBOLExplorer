@@ -1,43 +1,46 @@
-from xml.etree import ElementTree
+import os
 import subprocess
-import query
-import cluster
-import search
-from sys import platform
-import base64
 import tempfile
+from sys import platform
 from logger import Logger
+import cluster
 
 logger_ = Logger()
 
+# Handling selection of VSEARCH binary
+vsearch_binaries = {
+    "linux": "usearch/vsearch_linux",
+    "darwin": "usearch/vsearch_macos"
+}
 
-# handling selection of VSEARCH binary
-if platform == "linux" or platform == "linux2":
-    vsearch_binary_filename = 'usearch/vsearch_linux'
-elif platform == "darwin":
-    vsearch_binary_filename = 'usearch/vsearch_macos'
-else:
-    logger_.log("Sorry, your OS is not supported for sequence based-search.")
+vsearch_binary_filename = vsearch_binaries.get(platform, None)
+if not vsearch_binary_filename:
+    logger_.log("Sorry, your OS is not supported for sequence-based search.")
 
-# add valid flags to here
-globalFlags = {'maxaccepts': '50', 'id': '0.8', 'iddef': '2', 'maxrejects': '0', 'maxseqlength': '5000', 'minseqlength': '20'}
-exactFlags = {}
+# Predefined global and exact search flags
+global_flags = {
+    'maxaccepts': '50',
+    'id': '0.8',
+    'iddef': '2',
+    'maxrejects': '0',
+    'maxseqlength': '5000',
+    'minseqlength': '20'
+}
+exact_flags = {}
 
 def write_to_temp(sequence):
     """
-    Writes text sequence to temp FASTA file for search
+    Writes a text sequence to a temporary FASTA file for search.
     
     Arguments:
-        sequence {string} -- Sequence to write to file
+        sequence {str} -- Sequence to write to file
     
     Returns:
-        string -- file path
+        str -- Path to the temp file
     """
-    temp = tempfile.NamedTemporaryFile(suffix=".fsa",delete=False)
-    with open(temp.name, 'w') as f:
-        f.write('>sequence_to_search\n')
-        f.write('%s\n' % sequence)
-    return temp.name
+    with tempfile.NamedTemporaryFile(suffix=".fsa", delete=False, mode='w') as temp_file:
+        temp_file.write(f'>sequence_to_search\n{sequence}\n')
+    return temp_file.name
 
 # pass in the sequence to this function, replace searchsequence.fsa with the query sequence
 def run_vsearch_global(fileName):
@@ -47,14 +50,16 @@ def run_vsearch_global(fileName):
     Arguments:
         fileName {string} -- Path to file
     """
+
     # setting maxaccepts to 0 disables the limit (searches for all possible matches)
     args = [vsearch_binary_filename, '--usearch_global', fileName, '--db', 'dumps/sequences.fsa','--uc', fileName[:-4] + '.uc', '--uc_allhits',]
-    args = append_flags_to_args(args, globalFlags)
-    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
+    args = append_flags_to_args(args, global_flags)
+
+    popen = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     popen.wait()
     output = popen.stdout.read()
     logger_.log(output)
-
+    
 def run_vsearch_exact(fileName):
     """
     Runs the "search_exact" command
@@ -64,12 +69,11 @@ def run_vsearch_exact(fileName):
     """
     # setting maxaccepts to 0 disables the limit (searches for all possible matches)
     args = [vsearch_binary_filename, '--search_exact', fileName, '--db', 'dumps/sequences.fsa','--uc', fileName[:-4] + '.uc', '--uc_allhits']
-    args = append_flags_to_args(args, exactFlags)
+    args = append_flags_to_args(args, exact_flags)
     popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
     logger_.log(output)
-
 
 def append_flags_to_args(argsList, flags):
     """
@@ -95,9 +99,8 @@ def add_global_flags(userFlags):
         userFlags {dict} -- flags selected by user
     """
     for flag in userFlags:
-        if flag in globalFlags:
-            globalFlags[flag] = userFlags[flag]
-
+        if flag in global_flags:
+            global_flags[flag] = userFlags[flag]
 
 def add_exact_flags(userFlags):
     """
@@ -109,32 +112,29 @@ def add_exact_flags(userFlags):
         userFlags {dict} -- flags selected by user
     """
     for flag in userFlags:
-        if flag in exactFlags:
-            exactFlags[flag] = userFlags[flag]
+        if flag in exact_flags:
+            exact_flags[flag] = userFlags[flag]
 
-
-def sequence_search(userFlags, fileName):
+def sequence_search(user_flags, file_name):
     """
-    Main method
-    
-    Handles all search queries
+    Handles all search queries.
     
     Arguments:
-        userFlags {dict} -- flags selected by user
-        fileName {string} -- path to temp file
+        user_flags {dict} -- Flags selected by the user
+        file_name {str} -- Path to the temp file
     
     Returns:
-        set -- search results by URI
+        set -- Search results by URI
     """
     logger_.log('Starting sequence search')
-
-    if "search_exact" in userFlags:
-        add_exact_flags(userFlags)
-        run_vsearch_exact(fileName)
+    
+    if "search_exact" in user_flags:
+        add_exact_flags(user_flags)
+        run_vsearch_exact(file_name)
     else:
-        add_global_flags(userFlags)
-        run_vsearch_global(fileName)
+        add_global_flags(user_flags)
+        run_vsearch_global(file_name)
     logger_.log('Sequence search complete')
-
-    return cluster.uclust2uris(fileName[:-4] + '.uc')
+    
+    return cluster.uclust2uris(file_name[:-4] + '.uc')
 
