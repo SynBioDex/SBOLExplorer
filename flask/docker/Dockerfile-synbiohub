@@ -5,7 +5,7 @@ RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
-    apt-get install -y git python python-pip && \
+    apt-get install -y git python3.6 python3-pip && \
     python -m pip install pip --upgrade && \
     git clone https://github.com/michael13162/SBOLExplorer.git && \
     cd SBOLExplorer/flask && \
