@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM ubuntu:22.04
 MAINTAINER Michael Zhang <michael13162@gmail.com>
 
 RUN apt-get update && \
