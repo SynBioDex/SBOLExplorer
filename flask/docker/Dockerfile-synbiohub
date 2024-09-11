@@ -40,5 +40,4 @@ RUN mkdir /mnt/config && \
 
 ADD config-synbiohub.json /mnt/config/config.json
 
-CMD "./start.sh"
-
+CMD sh -c ". ../../jammy/bin/activate && ./start.sh"

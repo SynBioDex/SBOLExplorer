@@ -12,7 +12,7 @@ RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime && \
     dpkg-reconfigure -f noninteractive tzdata
 
 RUN apt-get update && \
-    apt-get install -y software-properties-common && \
+    apt-get install -y software-properties-common coreutils && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y git cron python3.11 python3-pip python3.11-venv && \
@@ -38,5 +38,4 @@ RUN mkdir /mnt/config && \
     rm -rf dumps && \
     ln -s /mnt/data dumps
 
-CMD "./start.sh"
-
+CMD sh -c ". ../../jammy/bin/activate && ./start.sh"
