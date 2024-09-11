@@ -1,10 +1,13 @@
 {
-  "distributed_search": true, 
-  "elasticsearch_endpoint": "http://elasticsearch:9200/", 
-  "elasticsearch_index_name": "part", 
-  "pagerank_tolerance": "0.0001", 
-  "sparql_endpoint": "http://virtuoso:8890/sparql?", 
-  "synbiohub_public_graph": "https://synbiohub.utah.edu/public", 
-  "uclust_identity": "0.8"
+   "uclust_identity": "0.8",
+   "elasticsearch_index_name": "part",
+   "pagerank_tolerance": "0.0001",
+   "elasticsearch_endpoint": "http://elasticsearch:9200/",
+   "sparql_endpoint": "http://localhost:8890/sparql?",
+   "last_update_start": "none",
+   "last_update_end": "none",
+   "distributed_search": false,
+   "which_search": "vsearch",
+   "autoUpdateIndex": false,
+   "updateTimeInDays": "1"
 }
-
