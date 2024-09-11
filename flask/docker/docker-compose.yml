@@ -1,7 +1,7 @@
 version: "3"
 services:
   sbolexplorer:
-    image: michael13162/sbolexplorer:latest
+    image: myersresearchgroup/sbolexplorer:snapshot
     ports:
       - "13162:13162"
     depends_on:
