@@ -38,4 +38,4 @@ RUN mkdir /mnt/config && \
     rm -rf dumps && \
     ln -s /mnt/data dumps
 
-CMD sh -c ". ../../jammy/bin/activate && ./start.sh"
+CMD sh -c ". ../../jammy/bin/activate && ./start.sh && cat config.json"
