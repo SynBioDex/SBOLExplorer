@@ -19,7 +19,7 @@ RUN apt-get update && \
     python3.11 -m pip install pip --upgrade && \
     python3.11 -m venv jammy && \
     . jammy/bin/activate && \
-    git clone --branch change_dependencies https://github.com/SynBioDex/SBOLExplorer.git && \
+    git clone https://github.com/SynBioDex/SBOLExplorer.git && \
     cd SBOLExplorer/flask && \
     pip install -r requirements.txt && \
     crontab update.cron
@@ -38,4 +38,4 @@ RUN mkdir /mnt/config && \
     rm -rf dumps && \
     ln -s /mnt/data dumps
 
-CMD sh -c ". ../../jammy/bin/activate && ./start.sh && cat config.json"
+CMD sh -c ". ../../jammy/bin/activate && ./start.sh"
