@@ -1,18 +1,35 @@
 import re
-import utils
+from typing import List, Dict, Tuple, Optional
 import query
 import sequencesearch
+from wor_client import WORClient
+from elasticsearchManager import ElasticsearchManager
+from configManager import ConfigManager
+from logger import Logger
+
+config_manager = ConfigManager()
+elasticsearch_manager = ElasticsearchManager(config_manager)
+logger_ = Logger()
+wor_client_ = WORClient()
+
+# Compile regex patterns
+FROM_COUNT_PATTERN = re.compile(r'SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {')
+FROM_NORMAL_PATTERN = re.compile(r'\?type\n(.*)\s*WHERE {')
+CRITERIA_PATTERN = re.compile(r'WHERE {\s*(.*)\s*\?subject a \?type \.')
+OFFSET_PATTERN = re.compile(r'OFFSET (\d+)')
+LIMIT_PATTERN = re.compile(r'LIMIT (\d+)')
+SEQUENCE_PATTERN = re.compile(r'\s*\?subject sbol2:sequence \?seq \.\s*\?seq sbol2:elements \"([a-zA-Z]*)\"')
+FLAG_PATTERN = re.compile(r'# flag_([a-zA-Z0-9._]*): ([a-zA-Z0-9./-_]*)')
+KEYWORD_PATTERN = re.compile(r"CONTAINS\(lcase\(\?displayId\), lcase\('([^']*)'\)\)")
 
 
-def search_es(es_query):
+def extract_offset(sparql_query):
+    offset_match = OFFSET_PATTERN.search(sparql_query)
+    return int(offset_match.group(1)) if offset_match else 0
+
+def search_es(es_query: str) -> Dict:
     """
-    String query for ES searches
-    
-    Arguments:
-        es_query {string} -- String to search for
-    
-    Returns:
-        List -- List of all search results
+    String query for ES searches.
     """
     body = {
         'query': {
@@ -44,15 +61,14 @@ def search_es(es_query):
         'size': 10000
     }
     try:
-        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
     except:
+        logger_.log("search_es(es_query: str)")
         raise
 
-
-def empty_search_es(offset, limit, allowed_graphs):
+def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
     """
-    Empty string search based solely on pagerank
-    
+    Empty string search based solely on pagerank.
     Arguments:
         offset {int} -- Offset for search results
         limit {int} -- Size of search
@@ -61,10 +77,7 @@ def empty_search_es(offset, limit, allowed_graphs):
     Returns:
         List -- List of search results
     """
-    if len(allowed_graphs) == 1:
-        query = {'term': {'graph': allowed_graphs[0]}}
-    else:
-        query = {'terms': {'graph': allowed_graphs}}
+    query = {'term': {'graph': allowed_graphs[0]}} if len(allowed_graphs) == 1 else {'terms': {'graph': allowed_graphs}}
 
     body = {
         'query': {
@@ -81,15 +94,14 @@ def empty_search_es(offset, limit, allowed_graphs):
         'size': limit
     }
     try:
-        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
     except:
+        logger_.log("empty_search_es(offset: int, limit: int, allowed_graphs: List[str])")
         raise
 
-
-def search_es_allowed_subjects(es_query, allowed_subjects):
+def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Dict:
     """
-    String query for ES searches limited to allowed parts
-    
+    String query for ES searches limited to allowed parts.
     Arguments:
         es_query {string} -- String to search for
         allowed_subjects {list} - list of allowed subjects from Virtuoso
@@ -107,7 +119,7 @@ def search_es_allowed_subjects(es_query, allowed_subjects):
                                 'query': es_query,
                                 'fields': [
                                     'subject',
-                                    'displayId^3',  # caret indicates displayId is 3 times as important during search
+                                    'displayId^3',
                                     'version',
                                     'name',
                                     'description',
@@ -123,26 +135,23 @@ def search_es_allowed_subjects(es_query, allowed_subjects):
                 },
                 'script_score': {
                     'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"  # Math.log is a natural log
+                        'source': "_score * Math.log(doc['pagerank'].value + 1)"
                     }
                 },
-
             },
-
         },
         'from': 0,
         'size': 10000
     }
     try:
-        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
     except:
+        logger_.log("search_es_allowed_subjects(es_query: str, allowed_subjects: List[str])")
         raise
 
-
-def search_es_allowed_subjects_empty_string(allowed_subjects):
+def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
     """
-    ES search purely limited to allowed parts
-    
+    ES search purely limited to allowed parts.
     Arguments:
         allowed_subjects {list} - list of allowed subjects from Virtuoso
     
@@ -161,21 +170,51 @@ def search_es_allowed_subjects_empty_string(allowed_subjects):
                 },
                 'script_score': {
                     'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"  # Math.log is a natural log
+                        'source': "_score * Math.log(doc['pagerank'].value + 1)"
                     }
                 },
-
             },
-
         },
         'from': 0,
         'size': 10000
     }
     try:
-        return utils.get_es().search(index=utils.get_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
     except:
+        logger_.log("search_es_allowed_subjects_empty_string")
         raise
+def parse_sparql_query(sparql_query, is_count_query):
+    # Find FROM clause
+    _from_search = FROM_COUNT_PATTERN.search(sparql_query) if is_count_query else FROM_NORMAL_PATTERN.search(sparql_query)
+    _from = _from_search.group(1).strip() if _from_search else ''
 
+    # Find criteria
+    criteria_search = CRITERIA_PATTERN.search(sparql_query)
+    criteria = criteria_search.group(1).strip() if criteria_search else ''
+    
+    # Find offset
+    offset_match = OFFSET_PATTERN.search(sparql_query)
+    offset = int(offset_match.group(1)) if offset_match else 0
+
+    # Find limit
+    limit_match = LIMIT_PATTERN.search(sparql_query)
+    limit = int(limit_match.group(1)) if limit_match else 50
+
+    # Find sequence
+    sequence_match = SEQUENCE_PATTERN.search(sparql_query)
+    sequence = sequence_match.group(1) if sequence_match else ''
+    
+    # Extract flags
+    flags = {match.group(1): match.group(2) for match in FLAG_PATTERN.finditer(sparql_query)}
+
+    # Extract keywords
+    keywords = KEYWORD_PATTERN.findall(criteria)
+
+    # Construct es_query
+    es_query = ' '.join(keywords).strip()
+    #print("Hello es_query: ", es_query)
+    
+    return es_query, _from, criteria, offset, limit, sequence, flags
 
 def extract_query(sparql_query):
     """
@@ -187,54 +226,11 @@ def extract_query(sparql_query):
     Returns:
         List -- List of information extracted
     """
-    _from = ''
-    if is_count_query(sparql_query):
-        _from_search = re.search(r'''SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {''',
-                                 sparql_query)
-    else:
-        _from_search = re.search(r'''\?type\n(.*)\s*WHERE {''', sparql_query)
-    if _from_search:
-        _from = _from_search.group(1).strip()
+    return parse_sparql_query(sparql_query, is_count_query(sparql_query))
 
-    criteria = ''
-    criteria_search = re.search(r'''WHERE {\s*(.*)\s*\?subject a \?type \.''', sparql_query)
-    if criteria_search:
-        criteria = criteria_search.group(1).strip()
-
-    offset = 0
-    offset_search = re.search(r'''OFFSET (\d*)''', sparql_query)
-    if offset_search:
-        offset = int(offset_search.group(1))
-
-    limit = 50
-    limit_search = re.search(r'''LIMIT (\d*)''', sparql_query)
-    if limit_search:
-        limit = int(limit_search.group(1))
-
-    sequence = ''
-    sequence_search = re.search(r'''\s*\?subject sbol2:sequence \?seq \.\s*\?seq sbol2:elements \"([a-zA-Z]*)\"''',
-                                sparql_query)
-    if sequence_search:
-        sequence = sequence_search.group(1)
-
-    flags = {}
-    flag_search = re.finditer(r'''# flag_([a-zA-Z0-9._]*): ([a-zA-Z0-9./-_]*)''', sparql_query)
-    for flag in flag_search:
-        flags[flag.group(1)] = flag.group(2)
-
-    extract_keyword_re = re.compile(r'''CONTAINS\(lcase\(\?displayId\), lcase\('([^']*)'\)\)''')
-    keywords = []
-    for keyword in re.findall(extract_keyword_re, criteria):
-        keywords.append(keyword)
-    es_query = ' '.join(keywords).strip()
-
-    return es_query, _from, criteria, offset, limit, sequence, flags
-
-
-def extract_allowed_graphs(_from, default_graph_uri):
+def extract_allowed_graphs(_from: str, default_graph_uri: str) -> List[str]:
     """
-    Extracts the allowed graphs to search over
-    
+    Extracts the allowed graphs to search over.
     Arguments:
         _from {string} -- Graph where search originated
         default_graph_uri {string} -- The default graph URI pulled from SBH
@@ -242,34 +238,17 @@ def extract_allowed_graphs(_from, default_graph_uri):
     Returns:
         List -- List of allowed graphs
     """
-    allowed_graphs = []
+    allowed_graphs = [default_graph_uri] if not _from else [graph.strip()[1:-1] for graph in _from.split('FROM') if graph.strip()[1:-1]]
+    if config_manager.load_config()['distributed_search']:
+        allowed_graphs.extend(instance['instanceUrl'] + '/public' for instance in wor_client_.get_wor_instance())
+    return allowed_graphs
 
-    if utils.get_config()['distributed_search']:
-        instances = utils.get_wor()
-        for instance in instances:
-            allowed_graphs.append(instance['instanceUrl'] + '/public')
-
-    if _from == '':
-        allowed_graphs.append(default_graph_uri)
-        return allowed_graphs
-    else:
-        for graph in _from.split('FROM'):
-            graph = graph.strip()
-            graph = graph[1:len(graph) - 1]
-
-            if graph != '':
-                allowed_graphs.append(graph)
-
-        return allowed_graphs
-
-
-def is_count_query(sparql_query):
+def is_count_query(sparql_query: str) -> bool:
     return 'SELECT (count(distinct' in sparql_query
 
-
-def create_response(count, bindings, return_count):
+def create_response(count: int, bindings: List[Dict], return_count: bool) -> Dict:
     """
-    Creates response to be sent back to SBH
+    Creates response to be sent back to SBH.
     
     Arguments:
         count {int} -- ?
@@ -280,30 +259,33 @@ def create_response(count, bindings, return_count):
         ? -- ?
     """
     if return_count:
-        response = {"head":
-                    {"link": [], "vars": ["count"]},
-                    "results": {"distinct": False, "ordered": True,
-                                "bindings": [{"count": {
-                                     "type": "typed-literal",
-                                     "datatype": "http://www.w3.org/2001/XMLSchema#integer",
-                                     "value": "10"}}]}}
-        response['results']['bindings'][0]['count']['value'] = str(count)
-    else:
-        response = {"head": {"link": [],
-                             "vars": ["subject", "displayId", "version", "name", "description", "type", "percentMatch",
-                                      "strandAlignment", "CIGAR"]},
-                    "results": {"distinct": False, "ordered": True, "bindings": []}}
-        response['results']['bindings'] = bindings
+        return {
+            "head": {"link": [], "vars": ["count"]},
+            "results": {
+                "distinct": False,
+                "ordered": True,
+                "bindings": [{"count": {
+                    "type": "typed-literal",
+                    "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+                    "value": str(count)
+                    }
+                }]
+            }
+        }
+    return {
+        "head": {
+            "link": [],
+            "vars": ["subject", "displayId", "version", "name", "description", "type", "percentMatch", "strandAlignment", "CIGAR"]
+        },
+        "results": {"distinct": False, "ordered": True, "bindings": bindings}
+    }
 
-    return response
-
-
-def create_binding(subject, displayId, version, name, description, _type, role, sbol_type, order_by, percentMatch=-1,
-                   strandAlignment='N/A', CIGAR='N/A'):
+def create_binding(subject: str, displayId: Optional[str], version: Optional[int], name: Optional[str], description: Optional[str],
+                   _type: Optional[str], role: Optional[str], sbol_type: Optional[str], order_by: Optional[float],
+                   percentMatch: float = -1, strandAlignment: str = 'N/A', CIGAR: str = 'N/A') -> Dict:
     """
-    Creates bindings to be sent to SBH
-    
-    Arguments:
+    Creates bindings to be sent to SBH.
+        Arguments:
         subject {string} -- URI of part
         displayId {string} -- DisplayId of part
         version {int} -- Version of part
@@ -320,91 +302,29 @@ def create_binding(subject, displayId, version, name, description, _type, role, 
     
     Returns:
         Dict -- Part and its information
+    
     """
     binding = {}
-
-    if subject is not None:
-        binding["subject"] = {
-            "type": "uri",
-            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
-            "value": subject
-        }
-
-    if displayId is not None:
-        binding["displayId"] = {
-            "type": "literal",
-            "datatype": "http://www.w3.org/2001/XMLSchema#string",
-            "value": displayId
-        }
-
-    if version is not None:
-        binding["version"] = {
-            "type": "literal",
-            "datatype": "http://www.w3.org/2001/XMLSchema#string",
-            "value": version
-        }
-
-    if name is not None:
-        binding["name"] = {
-            "type": "literal",
-            "datatype": "http://www.w3.org/2001/XMLSchema#string",
-            "value": name
-        }
-
-    if description is not None:
-        binding["description"] = {
-            "type": "literal",
-            "datatype": "http://www.w3.org/2001/XMLSchema#string",
-            "value": description
-        }
-
-    if _type is not None:
-        binding["type"] = {
-            "type": "uri",
-            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
-            "value": _type
-        }
-
-    if role is not None:
-        binding["role"] = {
-            "type": "uri",
-            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
-            "value": role
-        }
-
-    if sbol_type is not None:
-        binding["sboltype"] = {
-            "type": "uri",
-            "datatype": "http://www.w3.org/2001/XMLSchema#uri",
-            "value": sbol_type
-        }
-
-    if order_by is not None:
-        binding["order_by"] = order_by
-
-    if percentMatch != -1:
-        binding["percentMatch"] = {
-            "type": "literal",
-            "datatype": "http://www.w3.org/2001/XMLSchema#string",
-            "value": str(percentMatch)
-        }
-
-    if strandAlignment != 'N/A':
-        binding["strandAlignment"] = {
-            "type": "literal",
-            "datatype": "http://www.w3.org/2001/XMLSchema#string",
-            "value": strandAlignment
-        }
-
-    if CIGAR != 'N/A':
-        binding["CIGAR"] = {
-            "type": "literal",
-            "datatype": "http://www.w3.org/2001/XMLSchema#string",
-            "value": CIGAR
-        }
-
+    attributes = {
+        "subject": subject,
+        "displayId": displayId,
+        "version": str(version) if version is not None else None,
+        "name": name,
+        "description": description,
+        "type": _type,
+        "role": role,
+        "sboltype": sbol_type,
+        "order_by": order_by,
+        "percentMatch": str(percentMatch) if percentMatch != -1 else None,
+        "strandAlignment": strandAlignment if strandAlignment != 'N/A' else None,
+        "CIGAR": CIGAR if CIGAR != 'N/A' else None
+    }
+    for key, value in attributes.items():
+        if value is not None:
+            datatype = "http://www.w3.org/2001/XMLSchema#uri" if key in ["subject", "type", "role", "sboltype"] else "http://www.w3.org/2001/XMLSchema#string"
+            ltype = "uri" if key in ["subject", "type", "role", "sboltype"] else "literal"
+            binding[key] = {"type": ltype, "value": str(value), "datatype": datatype} if not key=="order_by" else order_by
     return binding
-
 
 def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects=None):
     """
@@ -421,42 +341,49 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects=None
     Returns:
         Dict -- All parts and their corresponding information
     """
+    if es_response is None or 'hits' not in es_response or 'hits' not in es_response['hits']:
+        logger_.log("[ERROR] Elasticsearch response is None or malformed.")
+        return []
+    
     bindings = []
     cluster_duplicates = set()
+
+    allowed_subjects_set = set(allowed_subjects) if allowed_subjects else None
 
     for hit in es_response['hits']['hits']:
         _source = hit['_source']
         _score = hit['_score']
         subject = _source['subject']
 
-        if allowed_subjects is not None and subject not in allowed_subjects:
+        if allowed_subjects_set and subject not in allowed_subjects_set:
             continue
 
-        if _source.get('graph') not in allowed_graphs:
+        graph = _source.get('graph')
+        if graph not in allowed_graphs:
             continue
 
         if subject in cluster_duplicates:
-            _score = _score / 2.0
+            _score /= 2.0
         elif subject in clusters:
             cluster_duplicates.update(clusters[subject])
 
         if _source.get('type') is not None and 'http://sbols.org/v2#Sequence' in _source.get('type'):
-            _score = _score / 10.0
+            _score /= 10.0
 
-        binding = create_binding(subject,
-                                 _source.get('displayId'),
-                                 _source.get('version'),
-                                 _source.get('name'),
-                                 _source.get('description'),
-                                 _source.get('type'),
-                                 _source.get('role'),
-                                 _source.get('sboltype'),
-                                 _score
-                                 )
+        binding = create_binding(
+            subject,
+            _source.get('displayId'),
+            _source.get('version'),
+            _source.get('name'),
+            _source.get('description'),
+            _source.get('type'),
+            _source.get('role'),
+            _source.get('sboltype'),
+            _score
+        )
         bindings.append(binding)
 
     return bindings
-
 
 def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False, ucTableName=''):
     """
@@ -477,44 +404,43 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False,
     parts = (p for p in criteria_response if p.get('role') is None or 'http://wiki.synbiohub.org' in p.get('role'))
     for part in parts:
         subject = part.get('subject')
+        pagerank = uri2rank.get(subject, 1)
 
-        if subject not in uri2rank:
-            pagerank = 1
-        else:
-            pagerank = uri2rank[subject]
-
-        if part.get('type') is not None and 'http://sbols.org/v2#Sequence' in part.get('type'):
-            pagerank = pagerank / 10.0
+        if 'http://sbols.org/v2#Sequence' in part.get('type', ''):
+            pagerank /= 10.0
 
         if sequence_search:
-            pagerank = pagerank * (float(get_percent_match(part.get('subject'), ucTableName)) / 100)
-            binding = create_binding(part.get('subject'),
-                                     part.get('displayId'),
-                                     part.get('version'),
-                                     part.get('name'),
-                                     part.get('description'),
-                                     part.get('type'),
-                                     part.get('role'),
-                                     part.get('sboltype'),
-                                     pagerank,
-                                     get_percent_match(part.get('subject'), ucTableName),
-                                     get_strand_alignment(part.get('subject'), ucTableName),
-                                     get_cigar_data(part.get('subject'), ucTableName))
-
+            percent_match = float(get_percent_match(subject, ucTableName)) / 100
+            binding = create_binding(
+                subject,
+                part.get('displayId'),
+                part.get('version'),
+                part.get('name'),
+                part.get('description'),
+                part.get('type'),
+                part.get('role'),
+                part.get('sboltype'),
+                pagerank * percent_match,
+                percent_match,
+                get_strand_alignment(subject, ucTableName),
+                get_cigar_data(subject, ucTableName)
+            )
         else:
-            binding = create_binding(part.get('subject'),
-                                     part.get('displayId'),
-                                     part.get('version'),
-                                     part.get('name'),
-                                     part.get('description'),
-                                     part.get('type'),
-                                     part.get('role'),
-                                     part.get('sboltype'),
-                                     pagerank)
+            binding = create_binding(
+                subject,
+                part.get('displayId'),
+                part.get('version'),
+                part.get('name'),
+                part.get('description'),
+                part.get('type'),
+                part.get('role'),
+                part.get('sboltype'),
+                pagerank
+            )
 
         bindings.append(binding)
-    return bindings
 
+    return bindings
 
 def get_allowed_subjects(criteria_response):
     """
@@ -525,15 +451,10 @@ def get_allowed_subjects(criteria_response):
     Returns: Parts the user is allowed to see
 
     """
-    subjects = set()
-
-    for part in criteria_response:
-        subjects.add(part['subject'])
-
-    return subjects
-
+    return {part['subject'] for part in criteria_response}
 
 def create_similar_criteria(criteria, clusters):
+    
     """
     Adds filter to query to be sent to Virtuoso
     Args:
@@ -548,7 +469,8 @@ def create_similar_criteria(criteria, clusters):
     if subject not in clusters or not clusters[subject]:
         return 'FILTER (?subject != ?subject)'
 
-    return 'FILTER (' + ' || '.join(['?subject = <' + duplicate + '>' for duplicate in clusters[subject]]) + ')'
+    filters = ' || '.join(f'?subject = <{duplicate}>' for duplicate in clusters[subject])
+    return f'FILTER ({filters})'
 
 
 def create_sequence_criteria(criteria, uris):
@@ -561,10 +483,10 @@ def create_sequence_criteria(criteria, uris):
     Returns: String containing a SPARQL filter
 
     """
-    if len(uris) == 0:
+    if not uris:
         return ''
-
-    return 'FILTER (' + ' || '.join(['?subject = <' + uri + '>' for uri in uris]) + ')'
+    filters = ' || '.join(f'?subject = <{uri}>' for uri in uris)
+    return f'FILTER ({filters})'
 
 
 def parse_allowed_graphs(allowed_graphs):
@@ -576,12 +498,7 @@ def parse_allowed_graphs(allowed_graphs):
     Returns: List of allowed graphs
 
     """
-    result = ''
-    for allowed_graph in allowed_graphs:
-        if allowed_graph is not None:
-            result += 'FROM <' + allowed_graph + '> '
-    return result
-
+    return ' '.join(f'FROM <{graph}>' for graph in allowed_graphs if graph)
 
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
     """
@@ -596,7 +513,7 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
 
     """
     es_query, _from, criteria, offset, limit, sequence, flags = extract_query(sparql_query)
-
+    
     if criteria.strip() == 'FILTER ()':
         criteria = ''
 
@@ -610,17 +527,16 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         allowed_uris = filter_sequence_search_subjects(_from, results)
         criteria_response = query.query_parts(_from)
         # Filter searches by URI to hide private parts here instead of on Virtuoso
-        criteria_response_filtered = [c for c in criteria_response if any(f for f in allowed_uris if f in c.get('subject'))]
+        criteria_response_filtered = [c for c in criteria_response if any(f in c.get('subject', '') for f in allowed_uris)]
         bindings = create_criteria_bindings(criteria_response_filtered, uri2rank, True, filename[:-4] + '.uc')
 
-    elif len(sequence.strip()) > 0:
+    elif sequence.strip():
         # send sequence search to search.py
         temp_filename = sequencesearch.write_to_temp(sequence)
         results = sequencesearch.sequence_search(flags, temp_filename)
-
         allowed_uris = filter_sequence_search_subjects(_from, results)
         criteria_response = query.query_parts(_from)
-        criteria_response_filtered = [c for c in criteria_response if any(f for f in allowed_uris if f in c.get('subject'))]
+        criteria_response_filtered = [c for c in criteria_response if any(f in c.get('subject', '') for f in allowed_uris)]
         bindings = create_criteria_bindings(criteria_response_filtered, uri2rank, True, temp_filename[:-4] + '.uc')
 
     elif 'SIMILAR' in criteria:
@@ -634,37 +550,40 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         criteria_response = query.query_parts(_from, criteria)
         bindings = create_criteria_bindings(criteria_response, uri2rank)
 
-    elif es_query == '' and filterless_criteria == '':
+    elif es_query == '' and not filterless_criteria:
         # empty search
         es_response = empty_search_es(offset, limit, allowed_graphs)
         bindings = create_bindings(es_response, clusters, allowed_graphs)
-        bindings.sort(key=lambda binding: binding['order_by'], reverse=True)
+        bindings.sort(key=lambda b: b['order_by'], reverse=True)
         return create_response(es_response['hits']['total'], bindings, is_count_query(sparql_query))
 
     else:
-
-        if filterless_criteria == '':
+        if not filterless_criteria:
             es_response = search_es(es_query)
             # pure string search
             bindings = create_bindings(es_response, clusters, allowed_graphs)
-
         else:
             # advanced search and string search
             criteria_response = query.query_parts(_from, filterless_criteria)
             allowed_subjects = get_allowed_subjects(criteria_response)
 
-            if es_query == '':
-                es_allowed_subject = search_es_allowed_subjects_empty_string(allowed_subjects)
-            else:
-                es_allowed_subject = search_es_allowed_subjects(es_query, allowed_subjects)
+            es_allowed_subject = (search_es_allowed_subjects_empty_string(allowed_subjects)
+                                  if es_query == '' 
+                                  else search_es_allowed_subjects(es_query, allowed_subjects))
 
             bindings = create_bindings(es_allowed_subject, clusters, allowed_graphs, allowed_subjects)
-            utils.log('Advanced string search complete.')
+            logger_.log('Advanced string search complete.')
 
-    bindings.sort(key=lambda binding: binding['order_by'], reverse=True)
-
+    bindings.sort(key=lambda b: b['order_by'], reverse=True)
     return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
+def get_info_from_uc_table(uri, ucTableName, column_index):
+    with open(ucTableName, 'r') as file:
+        for line in file:
+            parts = line.split()
+            if parts[9] == uri:
+                return parts[column_index]
+    return 'N/A'
 
 def get_percent_match(uri, ucTableName):
     """
@@ -676,16 +595,7 @@ def get_percent_match(uri, ucTableName):
     Returns: Percent match if available, else -1
 
     """
-    with open(ucTableName, 'r') as read:
-        uc_reader = read.read()
-        lines = uc_reader.splitlines()
-
-        for line in lines:
-            line = line.split()
-            if line[9] == uri:
-                return line[3]
-
-        return -1
+    return get_info_from_uc_table(uri, ucTableName, 3)
 
 
 def get_strand_alignment(uri, ucTableName):
@@ -698,38 +608,10 @@ def get_strand_alignment(uri, ucTableName):
     Returns: + or -
 
     """
-    with open(ucTableName, 'r') as read:
-        uc_reader = read.read()
-        lines = uc_reader.splitlines()
-
-        for line in lines:
-            line = line.split()
-            if line[9] == uri:
-                return line[4]
-
-        return 'N/A'
-
+    return get_info_from_uc_table(uri, ucTableName, 4)
 
 def get_cigar_data(uri, ucTableName):
-    """
-    Gets the CIGAR data of a part (see https://genome.sph.umich.edu/wiki/SAM)
-    Args:
-        uri: URI of the part
-        ucTableName: UClust table
-
-    Returns: CIGAR data if found, or N/A
-
-    """
-    with open(ucTableName, 'r') as read:
-        uc_reader = read.read()
-        lines = uc_reader.splitlines()
-
-        for line in lines:
-            line = line.split()
-            if line[9] == uri:
-                return line[7]
-
-        return 'N/A'
+    return get_info_from_uc_table(uri, ucTableName, 7)
 
 def filter_sequence_search_subjects(_from, uris):
     """
@@ -741,9 +623,5 @@ def filter_sequence_search_subjects(_from, uris):
         _from {list} -- List of allowed graphs
         uris {list} -- List of URI's from sequence search
     """
-    from_uris = []
-    result = re.findall(r"\<([A-Za-z0-9:\/.]+)\>*", _from)
-    for r in result:
-        from_uris.append(r)
-   
-    return [uri for uri in uris if any(f for f in from_uris if f in uri)]
+    from_uris = set(re.findall(r"\<([A-Za-z0-9:\/.]+)\>*", _from))
+    return [uri for uri in uris if any(f in uri for f in from_uris)]
