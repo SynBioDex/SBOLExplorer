@@ -2,7 +2,7 @@
    "uclust_identity": "0.8",
    "elasticsearch_index_name": "part",
    "pagerank_tolerance": "0.0001",
-   "elasticsearch_endpoint": "http://elasticsearch:9200/",
+   "elasticsearch_endpoint": "http://localhost:9200/",
    "sparql_endpoint": "http://localhost:8890/sparql?",
    "last_update_start": "none",
    "last_update_end": "none",

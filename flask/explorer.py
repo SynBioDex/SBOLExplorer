@@ -38,7 +38,6 @@ def handle_error(e):
         return jsonify(error=str(e.name + ": " + e.description)), e.code
     return jsonify(error=str(type(e).__name__) + str(e)), 500
 
-@app.before_request
 def startup():
     def auto_update_index():
         update_interval = int(config_manager.load_config().get('updateTimeInDays', 0)) * 86400
@@ -69,6 +68,8 @@ def startup():
     except Exception as e:
         log.error(f'Error during startup: {e}')
         raise
+    
+startup()
 
 def update_index():
     logger_.log('============ STARTING INDEXING ============\n\n', True)
