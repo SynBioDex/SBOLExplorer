@@ -14,7 +14,8 @@ import search
 import query
 from configManager import ConfigManager
 from dataManager import DataManager
-from elasticsearchManager import ElasticsearchManager
+from typesenseManager import TypesenseManager
+from typesense.exceptions import ObjectNotFound
 from logger import Logger
 
 
@@ -24,8 +25,16 @@ log.setLevel(logging.ERROR)
 
 config_manager = ConfigManager()
 data_manager = DataManager()
-elasticsearch_manager = ElasticsearchManager(config_manager)
+typesense_manager = TypesenseManager(config_manager)
 logger_ = Logger()
+
+
+def _collection_exists(client, collection_name):
+    try:
+        client.collections[collection_name].retrieve()
+        return True
+    except ObjectNotFound:
+        return False
 
 app = Flask(__name__)
 
@@ -38,6 +47,23 @@ def handle_error(e):
         return jsonify(error=str(e.name + ": " + e.description)), e.code
     return jsonify(error=str(type(e).__name__) + str(e)), 500
 
+def update_index():
+    logger_.log('============ STARTING INDEXING ============\n\n', True)
+    config_manager.save_update_start_time()
+
+    clusters = cluster.update_clusters()
+    data_manager.save_clusters(clusters)
+    
+    uri2rank = pagerank.update_pagerank()
+    data_manager.save_uri2rank(uri2rank)
+
+    index.update_index(data_manager.get_uri2rank())
+    
+    query.memoized_query_sparql.cache_clear()
+    logger_.log('Cache cleared', True)
+
+    config_manager.save_update_end_time()
+    logger_.log('============ INDEXING COMPLETED ============\n\n', True)
 def startup():
     def auto_update_index():
         update_interval = int(config_manager.load_config().get('updateTimeInDays', 0)) * 86400
@@ -58,12 +84,12 @@ def startup():
 
     logger_.log('SBOLExplorer started :)')
 
-    # Check and create index if necessary
+    # Check and create collection if necessary
     try:
-        es = elasticsearch_manager.get_es()
-        index_name = config_manager.load_config().get('elasticsearch_index_name')
-        if not es.indices.exists(index=index_name):
-            logger_.log('Index not found, creating new index.')
+        client = typesense_manager.get_client()
+        collection_name = config_manager.get_typesense_collection_name()
+        if not _collection_exists(client, collection_name):
+            logger_.log('Collection not found, creating new collection.')
             update_index()
     except Exception as e:
         log.error(f'Error during startup: {e}')
@@ -71,23 +97,7 @@ def startup():
     
 startup()
 
-def update_index():
-    logger_.log('============ STARTING INDEXING ============\n\n', True)
-    config_manager.save_update_start_time()
 
-    clusters = cluster.update_clusters()
-    data_manager.save_clusters(clusters)
-    
-    uri2rank = pagerank.update_pagerank()
-    data_manager.save_uri2rank(uri2rank)
-
-    index.update_index(data_manager.get_uri2rank())
-    
-    query.memoized_query_sparql.cache_clear()
-    logger_.log('Cache cleared', True)
-
-    config_manager.save_update_end_time()
-    logger_.log('============ INDEXING COMPLETED ============\n\n', True)
 
 @app.route('/info', methods=['GET'])
 def info():
@@ -166,29 +176,29 @@ def SBOLExplore_test_endpoint():
 @app.route('/', methods=['GET'])
 def sparql_search_endpoint():
     try:
-        es = elasticsearch_manager.get_es()
-        index_name = config_manager.load_config().get('elasticsearch_index_name')
-        if not es.indices.exists(index=index_name) or es.cat.indices(format='json')[0]['health'] == 'red':
-            abort(503, 'Elasticsearch is not working or the index does not exist.')
+        client = typesense_manager.get_client()
+        collection_name = config_manager.get_typesense_collection_name()
+        if not _collection_exists(client, collection_name):
+            abort(503, 'Typesense is not working or the collection does not exist.')
 
         sparql_query = request.args.get('query')
         if sparql_query:
             default_graph_uri = request.args.get('default-graph-uri')
             response = jsonify(search.search(
-                sparql_query, 
-                data_manager.get_uri2rank(), 
-                data_manager.get_clusters(), 
+                sparql_query,
+                data_manager.get_uri2rank(),
+                data_manager.get_clusters(),
                 default_graph_uri
             ))
             return response
-        return "<pre><h1>Welcome to SBOLExplorer! <br> <h2>The available indices in Elasticsearch are shown below:</h2></h1><br>"\
-            + str(elasticsearch_manager.get_es().cat.indices(format='json'))\
+        return "<pre><h1>Welcome to SBOLExplorer! <br> <h2>The Typesense collections are shown below:</h2></h1><br>"\
+            + str(client.collections.retrieve())\
             + "<br><br><h3>The config options are set to:</h3><br>"\
             + str(config_manager.load_config())\
             + "<br><br><br><br><a href=\"https://github.com/synbiodex/sbolexplorer\">Visit our GitHub repository!</a>"\
             + "<br><br>Any issues can be reported to our <a href=\"https://github.com/synbiodex/sbolexplorer/issues\">issue tracker.</a>"\
             + "<br><br>Used by <a href=\"https://github.com/synbiohub/synbiohub\">SynBioHub.</a>"
-            
+
     except Exception as e:
         log.error(f'Error during SPARQL search: {e}')
         raise
@@ -196,10 +206,10 @@ def sparql_search_endpoint():
 @app.route('/search', methods=['GET'])
 def search_by_string():
     try:
-        es = elasticsearch_manager.get_es()
-        index_name = config_manager.load_config().get('elasticsearch_index_name')
-        if not es.indices.exists(index=index_name) or es.cat.indices(format='json')[0]['health'] == 'red':
-            abort(503, 'Elasticsearch is not working or the index does not exist.')
+        client = typesense_manager.get_client()
+        collection_name = config_manager.get_typesense_collection_name()
+        if not _collection_exists(client, collection_name):
+            abort(503, 'Typesense is not working or the collection does not exist.')
 
         query = request.args.get('query')
         response = jsonify(search.search_es(query)['hits'])

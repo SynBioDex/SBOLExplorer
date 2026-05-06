@@ -131,7 +131,6 @@ def page_query(query, endpoint):
     offset = 0
     limit = 10000
     results = []
-
     if endpoint != config['sparql_endpoint']:
         query = re.sub(r'''FROM.*\n''', '', query)
 
@@ -140,10 +139,37 @@ def page_query(query, endpoint):
         new_results = send_query(full_query, endpoint)
         results.extend(new_results)
 
-        if len(new_results) < limit:
+        if len(new_results) < limit: # didn't break, continue + offset until it is more than 112000
             break
 
         offset += limit
+        logger_.log("OFFSET:")
+        logger_.log(offset)
+
+    #Initialize key-based pagination
+    #last_seen_id = None  # Store last retrieved record's ID
+
+    # while True:
+    #     # Modify the query to use a filtering condition instead of OFFSET
+    #     if last_seen_id:
+    #         full_query = f"""
+    #         {query_prefix} {query} 
+    #         WHERE {{ ?subject ?p ?o . FILTER (?subject > <{last_seen_id}>) }} 
+    #         ORDER BY ?subject
+    #         LIMIT {limit}
+    #         """
+    #     else:
+    #         full_query = f"{query_prefix} {query} ORDER BY ?subject LIMIT {limit}"
+
+    #     new_results = send_query(full_query, endpoint)
+
+    #     if not new_results:
+    #         break  # Stop if no more results
+
+    #     results.extend(new_results)
+
+    #     # Update last_seen_id with the last record retrieved
+    #     last_seen_id = new_results[-1]["subject"]  # Assuming "subject" is the sorting key
 
     return results
 

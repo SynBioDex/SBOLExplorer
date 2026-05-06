@@ -1,23 +1,59 @@
-from elasticsearch import helpers
+from typesense.exceptions import ObjectNotFound
 from configManager import ConfigManager
-from elasticsearchManager import ElasticsearchManager
+from typesenseManager import TypesenseManager
 import query
 import json
 from logger import Logger
 
-# Load config and initialize managers once
 config_manager = ConfigManager()
 config = config_manager.load_config()
-elasticsearch_manager = ElasticsearchManager(config_manager)
+typesense_manager = TypesenseManager(config_manager)
 logger_ = Logger()
+
+
+PARTS_COLLECTION_SCHEMA = {
+    'fields': [
+        {'name': 'subject',     'type': 'string'},
+        {'name': 'displayId',   'type': 'string', 'optional': True},
+        {'name': 'version',     'type': 'string', 'optional': True},
+        {'name': 'name',        'type': 'string', 'optional': True},
+        {'name': 'description', 'type': 'string', 'optional': True},
+        {'name': 'type',        'type': 'string', 'optional': True, 'facet': True},
+        {'name': 'role',        'type': 'string', 'optional': True},
+        {'name': 'sboltype',    'type': 'string', 'optional': True},
+        {'name': 'keywords',    'type': 'string', 'optional': True},
+        {'name': 'graph',       'type': 'string', 'facet': True},
+        {'name': 'pagerank',    'type': 'float'},
+    ],
+    'default_sorting_field': 'pagerank',
+}
+
+
+def _doc_from_part(part):
+    doc = {k: v for k, v in part.items() if v is not None}
+    doc['id'] = part['subject']
+    return doc
+
+
+def create_parts_collection(collection_name):
+    """
+    Creates a fresh Typesense collection, deleting any existing one with the same name.
+    """
+    client = typesense_manager.get_client()
+    try:
+        client.collections[collection_name].delete()
+        logger_.log('Collection already exists -> deleted', True)
+    except ObjectNotFound:
+        pass
+
+    schema = {'name': collection_name, **PARTS_COLLECTION_SCHEMA}
+    client.collections.create(schema)
+    logger_.log('Collection created', True)
+
 
 def add_pagerank(parts_response, uri2rank):
     """
     Adds the pagerank score for each part.
-
-    Arguments:
-        parts_response {List} -- List containing all parts from the SPARQL query
-        uri2rank {Dict} -- Dictionary of each part and its calculated pagerank score
     """
     for part in parts_response:
         part['pagerank'] = uri2rank.get(part['subject'], 1)
@@ -26,9 +62,6 @@ def add_pagerank(parts_response, uri2rank):
 def add_keywords(parts_response):
     """
     Adds the displayId to the 'keyword' category.
-
-    Arguments:
-        parts_response {List} -- List containing all parts from the SPARQL query
     """
     for part in parts_response:
         display_id = part.get('displayId')
@@ -41,13 +74,8 @@ def add_keywords(parts_response):
 def add_roles(parts_response, term_list):
     """
     Adds the synonyms from the SO-Ontologies list to each part's keyword category.
-
-    Arguments:
-        parts_response {List} -- List containing all parts from the SPARQL query
-        term_list {List} -- List of terms from the SO-Ontologies
     """
-    for part in parts_response: 
-        # Split the CSV of roles from sparql
+    for part in parts_response:
         role = part.get('role')
         if role and 'identifiers.org' in role:
             keywords_list = []
@@ -59,12 +87,11 @@ def add_roles(parts_response, term_list):
                     synonyms = term.get('synonyms', [])
                     if synonyms:
                         for synonym in synonyms:
-                            # remove the annoying header from the synonyms
                             if 'INSDC' in synonym:
                                 synonym = synonym.replace('INSDC_qualifier:', '')
                             if synonym not in keywords_list:
                                 keywords_list.append(synonym)
-                            
+
             part['keywords'] += ' ' + ' '.join(keywords_list)
 
 
@@ -78,76 +105,37 @@ def add_sbol_type(parts_response):
             part['keywords'] += ' ' + type_
 
 
-def create_parts_index(index_name):
+def bulk_index_parts(parts_response, collection_name):
     """
-    Creates a new index.
-
-    Arguments:
-        index_name {String} -- Name of the new index
+    Imports each part as a document into the Typesense collection.
     """
-    es = elasticsearch_manager.get_es()
-    if es.indices.exists(index_name):
-        logger_.log('Index already exists -> deleting', True)
-        es.indices.delete(index=index_name)
-
-    body = {
-        'mappings': {
-            index_name: {
-                'properties': {
-                    'subject': {
-                        'type': 'keyword'
-                    },
-                    'graph': {
-                        'type': 'keyword'
-                    }
-                },
-            }
-        },
-        'settings': {
-            'number_of_shards': 1
-        }
-    }
-    es.indices.create(index=index_name, body=body)
-    
-    logger_.log('Index created', True)
-
-
-def bulk_index_parts(parts_response, index_name):
-    """
-    Adds each part as a document to the index.
-
-    Arguments:
-        parts_response {List} -- List containing all parts from the SPARQL query
-        index_name {String} -- Name of the index
-    """
-    es = elasticsearch_manager.get_es()
-
-    def actions():
-        for part in parts_response:
-            yield {
-                '_index': index_name,
-                '_type': index_name,
-                '_id': part['subject'],
-                '_source': part
-            }
+    collection = typesense_manager.get_client().collections[collection_name]
+    docs = [_doc_from_part(part) for part in parts_response]
 
     logger_.log('Bulk indexing', True)
     try:
-        stats = helpers.bulk(es, actions())
+        results = collection.documents.import_(
+            docs,
+            {'action': 'upsert', 'dirty_values': 'coerce_or_drop'}
+        )
+        failures = [r for r in results if not r.get('success', False)]
+        if failures:
+            logger_.log(
+                f'[ERROR] {len(failures)} documents failed to index. First error: {failures[0]}',
+                True
+            )
+            raise RuntimeError(f'{len(failures)} documents failed indexing')
         logger_.log('Bulk indexing complete', True)
     except Exception as e:
-        logger_.log(f'[ERROR] Error during bulk indexing: {str(e)}' + '\n'.join(stats[1]), True)
+        logger_.log(f'[ERROR] Error during bulk indexing: {str(e)}', True)
         raise
 
 
 def update_index(uri2rank):
     """
     Main method to update the index.
-
-    Args:
-        uri2rank: Dictionary of pageranks for each URI
     """
-    index_name = config['elasticsearch_index_name']
+    collection_name = config_manager.get_typesense_collection_name()
 
     logger_.log('------------ Updating index ------------', True)
     logger_.log('******** Query for parts ********', True)
@@ -158,14 +146,13 @@ def update_index(uri2rank):
     add_pagerank(parts_response, uri2rank)
     add_keywords(parts_response)
 
-    # Load the SO-Ontologies list once
     with open('so-simplified.json', 'r') as so_json:
         term_list = json.load(so_json)
     add_roles(parts_response, term_list)
 
     add_sbol_type(parts_response)
-    create_parts_index(index_name)
-    bulk_index_parts(parts_response, index_name)
+    create_parts_collection(collection_name)
+    bulk_index_parts(parts_response, collection_name)
 
     logger_.log(f'******** Finished adding {len(parts_response)} parts to index ********', True)
     logger_.log('------------ Successfully updated index ------------\n', True)
@@ -174,31 +161,18 @@ def update_index(uri2rank):
 def delete_subject(subject):
     """
     Delete part for incremental indexing.
-
-    Args:
-        subject: The subject to delete from the index.
     """
-    index_name = config['elasticsearch_index_name']
-    es = elasticsearch_manager.get_es()
-
-    body = {
-        'query': {
-            'bool': {
-                'must': [
-                    {'ids': {'values': subject}}
-                ]
-            }
-        },
-        'conflicts': 'proceed'
-    }
-    es.delete_by_query(index=index_name, doc_type=index_name, body=body)
+    collection_name = config_manager.get_typesense_collection_name()
+    try:
+        typesense_manager.get_client().collections[collection_name].documents[subject].delete()
+    except ObjectNotFound:
+        pass
 
 
 def index_part(part):
-    delete_subject(part['subject'])
-    index_name = config['elasticsearch_index_name']
-    es = elasticsearch_manager.get_es()
-    es.index(index=index_name, doc_type=index_name, id=part['subject'], body=part)
+    collection_name = config_manager.get_typesense_collection_name()
+    doc = _doc_from_part(part)
+    typesense_manager.get_client().collections[collection_name].documents.upsert(doc)
 
 
 def refresh_index(subject, uri2rank):

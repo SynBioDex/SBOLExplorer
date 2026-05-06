@@ -44,6 +44,21 @@ class ConfigManager:
 
     def get_es_endpoint(self):
         return self.load_config().get('elasticsearch_endpoint')
+
+    def get_typesense_config(self):
+        cfg = self.load_config()
+        return {
+            'nodes': [{
+                'host': cfg.get('typesense_host'),
+                'port': cfg.get('typesense_port'),
+                'protocol': cfg.get('typesense_protocol'),
+            }],
+            'api_key': cfg.get('typesense_api_key'),
+            'connection_timeout_seconds': 5,
+        }
+
+    def get_typesense_collection_name(self):
+        return self.load_config().get('typesense_collection_name')
     
     def save_update_end_time(self):
         """

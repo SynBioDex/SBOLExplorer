@@ -3,13 +3,48 @@ from typing import List, Dict, Tuple, Optional
 import query
 import sequencesearch
 from wor_client import WORClient
-from elasticsearchManager import ElasticsearchManager
+from typesenseManager import TypesenseManager
 from configManager import ConfigManager
 from logger import Logger
 
 config_manager = ConfigManager()
-elasticsearch_manager = ElasticsearchManager(config_manager)
+typesense_manager = TypesenseManager(config_manager)
 logger_ = Logger()
+
+
+TEXT_QUERY_BY = 'subject,displayId,version,name,description,type,keywords'
+TEXT_QUERY_BY_WEIGHTS = '1,3,1,1,1,1,1'
+TEXT_SORT_BY = '_text_match(buckets: 10):desc,pagerank:desc'
+MAX_RESULTS = 10000
+TYPESENSE_PAGE_SIZE = 250
+
+
+def _backtick_list(values):
+    return ','.join(f'`{v}`' for v in values)
+
+
+def _search_paginated(params, max_total=MAX_RESULTS):
+    """Fetches up to max_total hits by paginating Typesense calls."""
+    collection_name = config_manager.get_typesense_collection_name()
+    collection = typesense_manager.get_client().collections[collection_name]
+
+    all_hits = []
+    found = 0
+    page = 1
+    while len(all_hits) < max_total:
+        page_size = min(TYPESENSE_PAGE_SIZE, max_total - len(all_hits))
+        page_params = {**params, 'page': page, 'per_page': page_size}
+        response = collection.documents.search(page_params)
+        found = response.get('found', 0)
+        hits = response.get('hits', [])
+        if not hits:
+            break
+        all_hits.extend(hits)
+        if len(hits) < page_size:
+            break
+        page += 1
+
+    return {'hits': all_hits[:max_total], 'found': found}
 wor_client_ = WORClient()
 
 # Compile regex patterns
@@ -29,157 +64,76 @@ def extract_offset(sparql_query):
 
 def search_es(es_query: str) -> Dict:
     """
-    String query for ES searches.
+    String query for Typesense text search with pagerank tie-breaking.
     """
-    body = {
-        'query': {
-            'function_score': {
-                'query': {
-                    'multi_match': {
-                        'query': es_query,
-                        'fields': [
-                            'subject',
-                            'displayId^3',  # caret indicates displayId is 3 times as important during search
-                            'version',
-                            'name',
-                            'description',
-                            'type',
-                            'keywords'
-                        ],
-                        'operator': 'or',
-                        'fuzziness': 'AUTO'
-                    }
-                },
-                'script_score': {
-                    'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"  # Math.log is a natural log
-                    }
-                }
-            }
-        },
-        'from': 0,
-        'size': 10000
+    params = {
+        'q': es_query,
+        'query_by': TEXT_QUERY_BY,
+        'query_by_weights': TEXT_QUERY_BY_WEIGHTS,
+        'num_typos': '2',
+        'sort_by': TEXT_SORT_BY,
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return _search_paginated(params)
     except:
         logger_.log("search_es(es_query: str)")
         raise
 
 def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
     """
-    Empty string search based solely on pagerank.
-    Arguments:
-        offset {int} -- Offset for search results
-        limit {int} -- Size of search
-        allowed_graphs {List} -- List of allowed graphs to search on
-    
-    Returns:
-        List -- List of search results
+    Empty search filtered by allowed graphs, sorted purely by pagerank.
     """
-    query = {'term': {'graph': allowed_graphs[0]}} if len(allowed_graphs) == 1 else {'terms': {'graph': allowed_graphs}}
+    if len(allowed_graphs) == 1:
+        filter_by = f'graph:=`{allowed_graphs[0]}`'
+    else:
+        filter_by = f'graph:=[{_backtick_list(allowed_graphs)}]'
 
-    body = {
-        'query': {
-            'function_score': {
-                'query': query,
-                'script_score': {
-                    'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"  # Math.log is a natural log
-                    }
-                }
-            }
-        },
-        'from': offset,
-        'size': limit
+    safe_limit = max(1, min(TYPESENSE_PAGE_SIZE, limit))
+    page = (offset // safe_limit) + 1 if safe_limit > 0 else 1
+
+    params = {
+        'q': '*',
+        'filter_by': filter_by,
+        'sort_by': 'pagerank:desc',
+        'page': page,
+        'per_page': safe_limit,
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        collection_name = config_manager.get_typesense_collection_name()
+        return typesense_manager.get_client().collections[collection_name].documents.search(params)
     except:
         logger_.log("empty_search_es(offset: int, limit: int, allowed_graphs: List[str])")
         raise
 
 def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Dict:
     """
-    String query for ES searches limited to allowed parts.
-    Arguments:
-        es_query {string} -- String to search for
-        allowed_subjects {list} - list of allowed subjects from Virtuoso
-    
-    Returns:
-        List -- List of all search results
+    Text search limited to a set of allowed subject URIs.
     """
-    body = {
-        'query': {
-            'function_score': {
-                'query': {
-                    'bool': {
-                        'must': [
-                            {'multi_match': {
-                                'query': es_query,
-                                'fields': [
-                                    'subject',
-                                    'displayId^3',
-                                    'version',
-                                    'name',
-                                    'description',
-                                    'type',
-                                    'keywords'
-                                ],
-                                'operator': 'or',
-                                'fuzziness': 'AUTO'
-                            }},
-                            {'ids': {'values': list(allowed_subjects)}}
-                        ]
-                    }
-                },
-                'script_score': {
-                    'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"
-                    }
-                },
-            },
-        },
-        'from': 0,
-        'size': 10000
+    params = {
+        'q': es_query,
+        'query_by': TEXT_QUERY_BY,
+        'query_by_weights': TEXT_QUERY_BY_WEIGHTS,
+        'num_typos': '2',
+        'filter_by': f'id:=[{_backtick_list(allowed_subjects)}]',
+        'sort_by': TEXT_SORT_BY,
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return _search_paginated(params)
     except:
         logger_.log("search_es_allowed_subjects(es_query: str, allowed_subjects: List[str])")
         raise
 
 def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
     """
-    ES search purely limited to allowed parts.
-    Arguments:
-        allowed_subjects {list} - list of allowed subjects from Virtuoso
-    
-    Returns:
-        List -- List of all search results
+    Search limited purely to allowed subject URIs, sorted by pagerank.
     """
-    body = {
-        'query': {
-            'function_score': {
-                'query': {
-                    'bool': {
-                        'must': [
-                            {'ids': {'values': list(allowed_subjects)}}
-                        ]
-                    }
-                },
-                'script_score': {
-                    'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"
-                    }
-                },
-            },
-        },
-        'from': 0,
-        'size': 10000
+    params = {
+        'q': '*',
+        'filter_by': f'id:=[{_backtick_list(allowed_subjects)}]',
+        'sort_by': 'pagerank:desc',
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return _search_paginated(params)
     except:
         logger_.log("search_es_allowed_subjects_empty_string")
         raise
@@ -341,18 +295,18 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects=None
     Returns:
         Dict -- All parts and their corresponding information
     """
-    if es_response is None or 'hits' not in es_response or 'hits' not in es_response['hits']:
-        logger_.log("[ERROR] Elasticsearch response is None or malformed.")
+    if es_response is None or 'hits' not in es_response:
+        logger_.log("[ERROR] Typesense response is None or malformed.")
         return []
-    
+
     bindings = []
     cluster_duplicates = set()
 
     allowed_subjects_set = set(allowed_subjects) if allowed_subjects else None
 
-    for hit in es_response['hits']['hits']:
-        _source = hit['_source']
-        _score = hit['_score']
+    for hit in es_response['hits']:
+        _source = hit['document']
+        _score = hit.get('text_match', 0)
         subject = _source['subject']
 
         if allowed_subjects_set and subject not in allowed_subjects_set:
@@ -555,7 +509,7 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         es_response = empty_search_es(offset, limit, allowed_graphs)
         bindings = create_bindings(es_response, clusters, allowed_graphs)
         bindings.sort(key=lambda b: b['order_by'], reverse=True)
-        return create_response(es_response['hits']['total'], bindings, is_count_query(sparql_query))
+        return create_response(es_response.get('found', len(bindings)), bindings, is_count_query(sparql_query))
 
     else:
         if not filterless_criteria:

@@ -1,13 +1,1 @@
-{
-   "uclust_identity": "0.8",
-   "elasticsearch_index_name": "part",
-   "pagerank_tolerance": "0.0001",
-   "elasticsearch_endpoint": "http://localhost:9200/",
-   "sparql_endpoint": "http://localhost:8890/sparql?",
-   "last_update_start": "none",
-   "last_update_end": "none",
-   "distributed_search": false,
-   "which_search": "vsearch",
-   "autoUpdateIndex": false,
-   "updateTimeInDays": "1"
-}
+{"uclust_identity": "0.8", "elasticsearch_index_name": "part", "pagerank_tolerance": "0.0001", "elasticsearch_endpoint": "http://localhost:9200/", "typesense_collection_name": "part", "typesense_host": "localhost", "typesense_port": "8108", "typesense_protocol": "http", "typesense_api_key": "xyz", "sparql_endpoint": "http://localhost:8890/sparql?", "last_update_start": "2026-05-05T23:11:34.686723", "last_update_end": "2026-05-06T00:16:35.169853", "distributed_search": false, "which_search": "vsearch", "autoUpdateIndex": false, "updateTimeInDays": "1"}
