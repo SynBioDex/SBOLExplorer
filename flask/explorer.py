@@ -212,7 +212,7 @@ def search_by_string():
             abort(503, 'Typesense is not working or the collection does not exist.')
 
         query = request.args.get('query')
-        response = jsonify(search.search_es(query)['hits'])
+        response = jsonify(search.search_es_ranked(query)['hits'])
         return response
     except Exception as e:
         log.error(f'Error during search by string: {e}')

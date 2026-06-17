@@ -1,0 +1,12 @@
+[
+  {"query": "rbs",                       "gold": {"BBa_B0034": 3, "BBa_B0030": 2, "BBa_B0032": 2}},
+  {"query": "ribosome binding site",     "gold": {"BBa_B0034": 3, "BBa_B0030": 2, "BBa_B0032": 2}},
+  {"query": "gfp",                       "gold": {"BBa_E0040": 3}},
+  {"query": "green fluorescent protein", "gold": {"BBa_E0040": 3}},
+  {"query": "rfp",                       "gold": {"BBa_E1010": 3}},
+  {"query": "terminator",                "gold": {"BBa_B0015": 3, "BBa_B0010": 2, "BBa_B0012": 2}},
+  {"query": "lac promoter",              "gold": {"BBa_R0010": 3}},
+  {"query": "tetr promoter",             "gold": {"BBa_R0040": 3}},
+  {"query": "luxr",                      "gold": {"BBa_C0062": 3}},
+  {"query": "constitutive promoter",     "gold": {"BBa_J23100": 3, "BBa_J23119": 2}}
+]

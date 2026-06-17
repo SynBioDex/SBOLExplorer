@@ -6,6 +6,10 @@ from configManager import ConfigManager
 config_manager = ConfigManager()
 logger_ = Logger()
 
+# Edges of the usage graph: every parent->child relationship where one
+# top-level part uses another. The UNION captures both direct (1-hop) and
+# 2-hop usage (parent -> tmp -> child), so a device counts as "using" the
+# sub-parts of the parts it contains.
 link_query = '''
 SELECT DISTINCT ?parent ?child
 WHERE
@@ -16,6 +20,8 @@ WHERE
 }
 '''
 
+# Nodes of the graph: every top-level part/device. Needed so that parts with
+# no usage links still appear in the graph (as dangling nodes).
 uri_query = '''
 SELECT DISTINCT ?subject
 WHERE
@@ -45,9 +51,13 @@ class Graph:
                 self.dangling_pages.add(parent_idx)
 
     def get_dangling_contrib(self, p):
+        # Rank mass held by dangling nodes (no out-links) is redistributed
+        # evenly across all nodes, so it isn't lost between iterations.
         return sum([p[j] for j in self.dangling_pages]) / self.size
 
     def get_teleportation_contrib(self):
+        # Random-jump term: with probability (1-s) a walker jumps to any node
+        # uniformly. Guarantees the chain is ergodic and PageRank converges.
         return 1.0 / self.size
 
 def populate_uris(uri_response):
@@ -62,13 +72,15 @@ def populate_links(link_response, adjacency_list):
         raise
 
 def pagerank(g, s=0.85, tolerance=0.001):
+    # Iterative power method. s = damping factor (prob. of following a link);
+    # iterate until the rank vector stops moving (L1 change < tolerance).
     n = g.size
     p = np.ones(n) / n  # Initial probability distribution vector
 
     if n == 0:
         logger_.log('no iterations: empty graph', True)
         return p
-    
+
     iteration = 1
     delta = 2
 
@@ -78,13 +90,16 @@ def pagerank(g, s=0.85, tolerance=0.001):
         teleportation_contrib = g.get_teleportation_contrib()
 
         for j in range(n):
+            # Rank flowing into j: each in-link k donates its score split
+            # evenly across k's out-links.
             in_link_contrib = np.sum(p[k] / g.number_out_links[k] for k in g.in_links[j])
+            # New score = damped (links + dangling) + random-jump term.
             v[j] = s * (in_link_contrib + dangling_contrib) + (1 - s) * teleportation_contrib
 
         v /= np.sum(v)
-        delta = np.sum(np.abs(p - v))
+        delta = np.sum(np.abs(p - v))  # L1 distance between old and new vectors
         logger_.log(f'Iteration {iteration}: L1 norm delta is {delta}', True)
-        
+
         p = v
         iteration += 1
 

@@ -1,4 +1,5 @@
 import re
+from math import log1p
 from typing import List, Dict, Tuple, Optional
 import query
 import sequencesearch
@@ -17,6 +18,15 @@ TEXT_QUERY_BY_WEIGHTS = '1,3,1,1,1,1,1'
 TEXT_SORT_BY = '_text_match(buckets: 10):desc,pagerank:desc'
 MAX_RESULTS = 10000
 TYPESENSE_PAGE_SIZE = 250
+
+# --- Weighted-sum re-rank for the /search string endpoint ---
+# Validated on the Phase 0 eval harness (see evaluation/): beats the old raw
+# _text_match(buckets:10) ordering, which buried canonical high-pagerank parts
+# (e.g. rbs -> BBa_B0034 went from rank ~36 to rank 1). Tuned config below.
+RERANK_POOL_SORT = '_text_match(buckets: 1):desc,pagerank:desc'  # pagerank-rich candidate pool
+RERANK_ALPHA = 0.3          # text vs pagerank weight (0 = pure pagerank, 1 = pure text)
+RERANK_EXACT_BOOST = 0.5    # lift for exact name/displayId matches (standard part over user construct)
+RERANK_PR_SCALE = 1e6       # log-compression scale for the heavy-tailed pagerank
 
 
 def _backtick_list(values):
@@ -77,6 +87,57 @@ def search_es(es_query: str) -> Dict:
         return _search_paginated(params)
     except:
         logger_.log("search_es(es_query: str)")
+        raise
+
+def _weighted_rerank(hits: List[Dict], query: str) -> List[Dict]:
+    """
+    Re-rank Typesense hits by  alpha*norm_text + (1-alpha)*norm_pr + boost*exact.
+
+    Mirrors evaluation/rankers.ranker_weighted_sum (validated to beat the old
+    _text_match-bucket ordering on the Phase 0 gold set). Hit objects are
+    preserved and only reordered, so downstream consumers are unaffected.
+    """
+    if not hits:
+        return hits
+    max_tm = max(h.get('text_match', 0) for h in hits) or 1
+    pr_signals = [log1p((h['document'].get('pagerank', 0) or 0) * RERANK_PR_SCALE) for h in hits]
+    max_pr = max(pr_signals) or 1
+    q_lower = query.strip().lower()
+
+    scored = []
+    for h, pr_sig in zip(hits, pr_signals):
+        doc = h['document']
+        norm_text = h.get('text_match', 0) / max_tm
+        norm_pr = pr_sig / max_pr
+        name = (doc.get('name') or '').strip().lower()
+        did = (doc.get('displayId') or '').strip().lower()
+        exact = 1.0 if q_lower in (name, did) else 0.0
+        score = RERANK_ALPHA * norm_text + (1 - RERANK_ALPHA) * norm_pr + RERANK_EXACT_BOOST * exact
+        scored.append((score, h))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [h for _, h in scored]
+
+def search_es_ranked(es_query: str) -> Dict:
+    """
+    String search for the /search endpoint: fetch a pagerank-rich candidate pool,
+    then re-rank with the weighted-sum scorer. Replaces the old reliance on raw
+    Typesense _text_match bucketing (search_es), which buried canonical parts.
+    Leaves search_es untouched (still used by the SPARQL path, which re-sorts).
+    """
+    params = {
+        'q': es_query,
+        'query_by': TEXT_QUERY_BY,
+        'query_by_weights': TEXT_QUERY_BY_WEIGHTS,
+        'num_typos': '2',
+        'sort_by': RERANK_POOL_SORT,
+    }
+    try:
+        response = _search_paginated(params)
+        response['hits'] = _weighted_rerank(response.get('hits', []), es_query)
+        return response
+    except:
+        logger_.log("search_es_ranked(es_query: str)")
         raise
 
 def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
