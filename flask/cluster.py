@@ -1,5 +1,7 @@
-from xml.etree import ElementTree
+import hashlib
+import os
 import subprocess
+import tempfile
 from configManager import ConfigManager
 from logger import Logger
 import query
@@ -45,11 +47,89 @@ def write_fasta(sequences):
         for sequence in sequences:
             f.write(f">{sequence['subject']}\n{sequence['sequence']}\n")
 
+def load_sequence_hashes():
+    """
+    Load existing sequences from sequences_filename into hash {uri: sha256(sequence)}
+
+    Returns:
+        sequence_hashes {dict} -- dictionary of uri to sha256 hash of sequence
+    """
+    sequence_hashes = {}
+    with open(sequences_filename, 'r') as f:
+        for line in f:
+            if line.startswith('>'):
+                uri = line[1:].strip()
+            else:
+                sequence = line.strip()
+                sequence_hashes[uri] = hashlib.sha256(sequence.encode()).hexdigest()
+    return sequence_hashes
+
+def find_new_sequences(sequence_response, existing_hashes):
+    """
+    Find new sequences that are not in existing_hashes
+
+    Arguments:
+        sequence_response {list} -- list of sequences from query
+        existing_hashes {dict} -- dictionary of uri to sha256 hash of sequence
+
+    Returns:
+        list -- list of new sequences
+    """
+    new_sequences = []
+    for sequence in sequence_response:
+        uri = sequence['subject']
+        seq = sequence['sequence']
+        seq_hash = hashlib.sha256(seq.encode()).hexdigest()
+        if uri not in existing_hashes or existing_hashes[uri] != seq_hash:
+            new_sequences.append(sequence)
+    return new_sequences
+
+def run_incremental_uclust(new_sequences_filename):
+    """
+    Runs --usearch_global on only the new sequences against the existing corpus and appends results to uclust_results_filename.
+
+    Arguments:
+        new_sequences_filename {str} -- path to FASTA file containing only new/changed sequences
+    """
+    with tempfile.NamedTemporaryFile(suffix='.uc', delete=False, mode='w') as tmp:
+        tmp_uc = tmp.name
+
+    args = [usearch_binary_filename, '--usearch_global', new_sequences_filename,
+            '--db', sequences_filename, '--uc', tmp_uc, '--uc_allhits',
+            '--id', str(uclust_identity), '--iddef', '2',
+            '--maxaccepts', '50', '--maxrejects', '0',
+            '--maxseqlength', '5000', '--minseqlength', '20']
+
+    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    logger_.log(result.stdout, True)
+    logger_.log(result.stderr, True)
+
+    with open(tmp_uc, 'r') as src, open(uclust_results_filename, 'a') as dst:
+        for line in src:
+            parts = line.split()
+            if parts[0] in ('H', 'S'):
+                dst.write(line)
+
+    os.unlink(tmp_uc)
+
+
+def append_to_fasta(new_sequences):
+    """
+    Appends new sequences to sequences.fsa without overwriting existing content.
+
+    Arguments:
+        new_sequences {list} -- list of new/changed sequence dicts with 'subject' and 'sequence' keys
+    """
+    with open(sequences_filename, 'a') as f:
+        for sequence in new_sequences:
+            f.write(f">{sequence['subject']}\n{sequence['sequence']}\n")
+
 def run_uclust():
-    args = [usearch_binary_filename, '-cluster_fast', sequences_filename, '-id', uclust_identity, '-sort', 'length', '-uc', uclust_results_filename]
+    args = [usearch_binary_filename, '--cluster_fast', sequences_filename, '--id', uclust_identity, '--uc', uclust_results_filename]
     # result = subprocess.run(args, capture_output=True, text=True) # Python3.7
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     logger_.log(result.stdout, True)
+    logger_.log(result.stderr, True)
 
 def analyze_uclust():
     total_parts = 0
@@ -59,6 +139,8 @@ def analyze_uclust():
     with open(uclust_results_filename, 'r') as f:
         for line in f:
             parts = line.split()
+            if not parts:
+                continue
             record_type = parts[0]
             if record_type in ('H', 'S'):
                 total_parts += 1
@@ -82,15 +164,16 @@ def uclust2uris(fileName):
 
 def uclust2clusters():
     cluster2parts = {}
-    
+
     with open(uclust_results_filename, 'r') as f:
         for line in f:
             parts = line.split()
-            if parts[0] in ('H', 'S'):
-                part, cluster = parts[8], parts[1]
-                if cluster not in cluster2parts:
-                    cluster2parts[cluster] = set()
-                cluster2parts[cluster].add(part)
+            if not parts or parts[0] not in ('H', 'S') or len(parts) < 10:
+                continue
+            part, cluster = parts[8], parts[1]
+            if cluster not in cluster2parts:
+                cluster2parts[cluster] = set()
+            cluster2parts[cluster].add(part)
 
     clusters = {part: parts.difference({part}) for cluster, parts in cluster2parts.items() for part in parts}
 
@@ -101,12 +184,28 @@ def update_clusters():
     logger_.log('******** Query for sequences ********', True)
     sequences_response = query.query_sparql(sequence_query)
     logger_.log('******** Query for sequences complete ********', True)
-    write_fasta(sequences_response)
 
-    logger_.log('******** Running uclust ********', True)
-    run_uclust()
+    if not os.path.exists(sequences_filename) or not os.path.exists(uclust_results_filename):
+        logger_.log('******** No existing cluster data — running full cluster ********', True)
+        write_fasta(sequences_response)
+        run_uclust()
+    else:
+        existing_hashes = load_sequence_hashes()
+        new_sequences = find_new_sequences(sequences_response, existing_hashes)
+
+        if not new_sequences:
+            logger_.log('******** No new sequences — skipping cluster ********', True)
+        else:
+            logger_.log(f'******** {len(new_sequences)} new/changed sequences — running incremental cluster ********', True)
+            with tempfile.NamedTemporaryFile(suffix='.fsa', delete=False, mode='w') as tmp:
+                tmp_fasta = tmp.name
+                for seq in new_sequences:
+                    tmp.write(f">{seq['subject']}\n{seq['sequence']}\n")
+            run_incremental_uclust(tmp_fasta)
+            os.unlink(tmp_fasta)
+            append_to_fasta(new_sequences)
+
     logger_.log('******** Running uclust complete ********', True)
-
     analyze_uclust()
     logger_.log('------------ Successfully updated clusters ------------\n', True)
     return uclust2clusters()

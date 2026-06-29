@@ -400,6 +400,25 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects=None
 
     return bindings
 
+def load_uc_index(ucTableName):
+    """
+    Loads the UC-index file into an in-memory index
+
+    Arguments:
+        ucTableName -- Name of UC-index file
+
+    Returns:
+        Dict -- UC-index file
+    """
+    index = {}
+
+    with open(ucTableName, 'r') as file:
+        for line in file:
+            parts = line.split()
+            if parts[0] == 'H':
+                index[parts[9]] = (parts[3], parts[4], parts[7])
+    return index
+
 def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False, ucTableName=''):
     """
     Creates binding for all non-string or non-empty searches
@@ -415,6 +434,8 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False,
     Returns:
         Dict -- Binding of parts
     """
+    uc_index = load_uc_index(ucTableName) if sequence_search else {}
+
     bindings = []
     parts = (p for p in criteria_response if p.get('role') is None or 'http://wiki.synbiohub.org' in p.get('role'))
     for part in parts:
@@ -425,7 +446,8 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False,
             pagerank /= 10.0
 
         if sequence_search:
-            percent_match = float(get_percent_match(subject, ucTableName)) / 100
+            pct, strand, cigar = uc_index.get(subject, ('N/A', 'N/A', 'N/A'))
+            percent_match = float(pct) / 100 if pct != 'N/A' else 0.0
             binding = create_binding(
                 subject,
                 part.get('displayId'),
@@ -437,8 +459,8 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False,
                 part.get('sboltype'),
                 pagerank * percent_match,
                 percent_match,
-                get_strand_alignment(subject, ucTableName),
-                get_cigar_data(subject, ucTableName)
+                strand,
+                cigar
             )
         else:
             binding = create_binding(
@@ -592,41 +614,6 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
     bindings.sort(key=lambda b: b['order_by'], reverse=True)
     return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
-def get_info_from_uc_table(uri, ucTableName, column_index):
-    with open(ucTableName, 'r') as file:
-        for line in file:
-            parts = line.split()
-            if parts[9] == uri:
-                return parts[column_index]
-    return 'N/A'
-
-def get_percent_match(uri, ucTableName):
-    """
-    Get percent match from USEARCH
-    Args:
-        uri: URI of part
-        ucTableName: UClust table
-
-    Returns: Percent match if available, else -1
-
-    """
-    return get_info_from_uc_table(uri, ucTableName, 3)
-
-
-def get_strand_alignment(uri, ucTableName):
-    """
-    Gets the strand alignment (+ or -) of the part
-    Args:
-        uri: URI of the part
-        ucTableName: UClust table
-
-    Returns: + or -
-
-    """
-    return get_info_from_uc_table(uri, ucTableName, 4)
-
-def get_cigar_data(uri, ucTableName):
-    return get_info_from_uc_table(uri, ucTableName, 7)
 
 def filter_sequence_search_subjects(_from, uris):
     """
