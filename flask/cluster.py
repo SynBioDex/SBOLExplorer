@@ -1,4 +1,5 @@
 from xml.etree import ElementTree
+import os
 import subprocess
 from configManager import ConfigManager
 from logger import Logger
@@ -47,12 +48,25 @@ def write_fasta(sequences):
 
 def run_uclust():
     if whichSearch == 'vsearch':
-        args = [usearch_binary_filename, '--cluster_fast', sequences_filename, '--id', uclust_identity, '--uc', uclust_results_filename]
+        args = [usearch_binary_filename, '--cluster_fast', sequences_filename, '--id', uclust_identity, '--uc',
+                uclust_results_filename]
     else:
-        args = [usearch_binary_filename, '-cluster_fast', sequences_filename, '-id', uclust_identity, '-sort', 'length', '-uc', uclust_results_filename]
-    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    logger_.log(result.stdout, True)
-    logger_.log(result.stderr, True)
+        args = [usearch_binary_filename, '-cluster_fast', sequences_filename, '-id', uclust_identity, '-sort', 'length',
+                '-uc', uclust_results_filename]
+    logger_.log(f'******** Running {whichSearch} clustering with identity {uclust_identity} ********', True)
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    for line in proc.stderr:
+        line = line.strip()
+        if line:
+            logger_.log(line, True)
+    proc.wait()
+    if proc.returncode != 0:
+        logger_.log(f'******** ERROR: {whichSearch} clustering failed with exit code {proc.returncode} ********', True)
+        raise RuntimeError(f'clustering ({whichSearch}) failed (exit {proc.returncode}) — see indexing log for details')
+    if not os.path.exists(uclust_results_filename) or os.path.getsize(uclust_results_filename) == 0:
+        raise RuntimeError(f'{whichSearch} clustering produced no output — {uclust_results_filename} is missing or empty')
+    logger_.log('******** Clustering completed successfully ********', True)
+
 
 def analyze_uclust():
     total_parts = 0
@@ -85,7 +99,7 @@ def uclust2uris(fileName):
 
 def uclust2clusters():
     cluster2parts = {}
-    
+
     with open(uclust_results_filename, 'r') as f:
         for line in f:
             parts = line.split()
