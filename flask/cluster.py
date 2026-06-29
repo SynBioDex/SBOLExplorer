@@ -46,7 +46,10 @@ def write_fasta(sequences):
             f.write(f">{sequence['subject']}\n{sequence['sequence']}\n")
 
 def run_uclust():
-    args = [usearch_binary_filename, '--cluster_fast', sequences_filename, '--id', uclust_identity, '--uc', uclust_results_filename]
+    if whichSearch == 'vsearch':
+        args = [usearch_binary_filename, '--cluster_fast', sequences_filename, '--id', uclust_identity, '--uc', uclust_results_filename]
+    else:
+        args = [usearch_binary_filename, '-cluster_fast', sequences_filename, '-id', uclust_identity, '-sort', 'length', '-uc', uclust_results_filename]
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     logger_.log(result.stdout, True)
     logger_.log(result.stderr, True)
