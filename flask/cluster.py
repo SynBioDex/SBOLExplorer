@@ -46,10 +46,10 @@ def write_fasta(sequences):
             f.write(f">{sequence['subject']}\n{sequence['sequence']}\n")
 
 def run_uclust():
-    args = [usearch_binary_filename, '-cluster_fast', sequences_filename, '-id', uclust_identity, '-sort', 'length', '-uc', uclust_results_filename]
-    # result = subprocess.run(args, capture_output=True, text=True) # Python3.7
+    args = [usearch_binary_filename, '--cluster_fast', sequences_filename, '--id', uclust_identity, '--uc', uclust_results_filename]
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     logger_.log(result.stdout, True)
+    logger_.log(result.stderr, True)
 
 def analyze_uclust():
     total_parts = 0
