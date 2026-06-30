@@ -102,7 +102,12 @@ def indexinginfo():
 def config_route():
     if request.method == 'POST':
         new_config = request.get_json()
-        config_manager.save_config(new_config)
+        try:
+            config_manager.save_config(new_config)
+        except ValueError as e:
+            # Invalid user input (e.g. out-of-range pagerank_tolerance /
+            # uclust_identity) -> 400 so the frontend can show the message.
+            return jsonify(error=str(e)), 400
         logger_.log('Successfully updated config')
 
     return jsonify(config_manager.load_config())

@@ -13,6 +13,21 @@ config = config_manager.load_config()
 logger_ = Logger()
 wor_client_ = WORClient()
 
+QUERY_PREFIX = '''
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX dcterms: <http://purl.org/dc/terms/>
+    PREFIX dc: <http://purl.org/dc/elements/1.1/>
+    PREFIX sbh: <http://wiki.synbiohub.org/wiki/Terms/synbiohub#>
+    PREFIX synbiohub: <http://synbiohub.org#>
+    PREFIX igem: <http://wiki.synbiohub.org/wiki/Terms/igem#>
+    PREFIX prov: <http://www.w3.org/ns/prov#>
+    PREFIX sbol2: <http://sbols.org/v2#>
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX purl: <http://purl.obolibrary.org/obo/>
+    PREFIX ncbi: <http://www.ncbi.nlm.nih.gov#>
+'''
+
 def query_parts(_from='', criteria='', indexing=False):
     """
     Gets all parts from Virtuoso.
@@ -46,9 +61,57 @@ def query_parts(_from='', criteria='', indexing=False):
         OPTIONAL {{ ?subject dcterms:description ?description . }}
         OPTIONAL {{ ?subject sbol2:role ?role . }}
         OPTIONAL {{ ?subject sbol2:type ?sboltype . }}
-    }} 
+    }}
     '''
     return memoized_query_sparql(query)
+
+def query_parts_paged(_from='', criteria='', indexing=False, page_size=10000):
+    """
+    Streaming version of query_parts: yields one page of parts at a time
+    instead of materializing the whole ~300k-part corpus in memory. Use this
+    for indexing so peak memory stays at one page (avoids the full-corpus load
+    that OOM-killed indexing on Azure).
+
+    Hits only the local SPARQL endpoint and relies on SELECT DISTINCT for
+    uniqueness (no cross-endpoint dedup), so it is NOT for distributed_search.
+    Not memoized -- we never want the full corpus held in the LRU cache.
+    """
+    query_body = f'''
+    SELECT DISTINCT
+        ?subject
+        ?displayId
+        ?version
+        ?name
+        ?description
+        ?type
+        ?graph
+        ?role
+        ?sboltype
+    {_from}
+    WHERE {{
+    {criteria}
+        ?subject a ?type .
+        ?subject sbh:topLevel ?subject .
+        {("GRAPH ?graph { ?subject ?a ?t } ." if indexing else "")}
+        OPTIONAL {{ ?subject sbol2:displayId ?displayId . }}
+        OPTIONAL {{ ?subject sbol2:version ?version . }}
+        OPTIONAL {{ ?subject dcterms:title ?name . }}
+        OPTIONAL {{ ?subject dcterms:description ?description . }}
+        OPTIONAL {{ ?subject sbol2:role ?role . }}
+        OPTIONAL {{ ?subject sbol2:type ?sboltype . }}
+    }}
+    '''
+    endpoint = config['sparql_endpoint']
+    offset = 0
+    while True:
+        full_query = f"{QUERY_PREFIX} {query_body} OFFSET {offset} LIMIT {page_size}"
+        page = send_query(full_query, endpoint)
+        if not page:
+            break
+        yield page
+        if len(page) < page_size:
+            break
+        offset += page_size
 
 @lru_cache(maxsize=32)
 def memoized_query_sparql(query):
