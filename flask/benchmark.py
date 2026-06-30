@@ -15,10 +15,9 @@ UCLUST_RESULTS = os.path.join(BASE_DIR, "benchmark/benchmark_uclust.uc")
 CSV_OUTPUT = os.path.join(BASE_DIR, "benchmark/baseline.csv")
 
 UCLUST_IDENTITY = '0.8'
-TEST_SEQUENCES_PATH = os.path.join(BASE_DIR, "benchmark/test_sequences.fsa")
-CSV_FIELDNAMES = ['hotspot', 'version', 'run', 'seq_len', 'elapsed_s', 'peak_kb']
+HOLDOUT_FRACTION = 0.10  # fraction of corpus held out as "new sequences" for hotspot 3
+CSV_FIELDNAMES = ['hotspot', 'version', 'run', 'n_query', 'n_corpus', 'seq_len', 'elapsed_s', 'peak_kb']
 
-# Load correct vsearch binary for OS
 vsearch_binaries = {
     "linux": os.path.join(BASE_DIR, "usearch/vsearch_linux"),
     "darwin": os.path.join(BASE_DIR, "usearch/vsearch_macos")
@@ -51,6 +50,19 @@ def load_fasta(path):
                 sequences.append((header, line))
                 header = None
     return sequences
+
+
+def write_fasta(sequences, path):
+    """
+    Writes a list of (header, sequence) tuples to a FASTA file.
+
+    Arguments:
+        sequences {list} -- List of (header, sequence) tuples
+        path {str} -- Output file path
+    """
+    with open(path, 'w') as f:
+        for header, seq in sequences:
+            f.write(f'>{header}\n{seq}\n')
 
 
 def write_to_temp(sequence):
@@ -123,7 +135,6 @@ def run_uc_scan(uc_file, uris):
         uris {list} -- List of hit URIs
     """
     hits = []
-
     for uri in uris:
         for col in [3, 4, 7]:  # percent_match, strand, CIGAR
             with open(uc_file) as file:
@@ -132,7 +143,6 @@ def run_uc_scan(uc_file, uris):
                     if parts[9] == uri:
                         hits.append(parts[col])
                         break
-
     return hits
 
 
@@ -151,26 +161,31 @@ def run_uc_scan_indexed(uc_index, uris):
     return hits
 
 
-def run_uclust():
+def run_uclust(corpus_path=None):
     """
     Runs vsearch cluster_fast on the full corpus and writes results to a .uc file.
+
+    Arguments:
+        corpus_path {str} -- Path to corpus FASTA file (defaults to CORPUS_PATH)
     """
-    args = [vsearch_binary_filename, '--cluster_fast', CORPUS_PATH, '--id', UCLUST_IDENTITY, '--uc', UCLUST_RESULTS]
+    path = corpus_path or CORPUS_PATH
+    args = [vsearch_binary_filename, '--cluster_fast', path, '--id', UCLUST_IDENTITY, '--uc', UCLUST_RESULTS]
     subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 
 
-def run_incremental_uclust(new_sequences_file):
+def run_incremental_uclust(new_sequences_file, corpus_path):
     """
     Optimized hotspot 3: runs vsearch usearch_global on only new sequences against the existing corpus.
 
     Arguments:
         new_sequences_file {str} -- Path to FASTA file containing only new/changed sequences
+        corpus_path {str} -- Path to existing corpus FASTA file (without the new sequences)
     """
     with tempfile.NamedTemporaryFile(suffix='.uc', delete=False, mode='w') as tmp:
         tmp_uc = tmp.name
 
     args = [vsearch_binary_filename, '--usearch_global', new_sequences_file,
-            '--db', CORPUS_PATH, '--uc', tmp_uc, '--uc_allhits',
+            '--db', corpus_path, '--uc', tmp_uc, '--uc_allhits',
             '--id', UCLUST_IDENTITY, '--iddef', '2',
             '--maxaccepts', '50', '--maxrejects', '0',
             '--maxseqlength', '5000', '--minseqlength', '20']
@@ -233,28 +248,31 @@ def benchmark_search_pipeline(sequences, n=20):
     """
     rows = []
     eligible = [seq for _, seq in sequences if len(seq) <= 5000]
+    n_corpus = len(sequences)
+
+    print(f"\nBenchmarking hotspots 1 & 2: {n} random sequences against corpus of {n_corpus} sequences...")
 
     for i in range(n):
         random_sequence = random.choice(eligible)
         tmp_fasta = write_to_temp(random_sequence)
 
-        # Hotspot 1: Synchronous blocking subprocess (no optimized version — sidelined)
         elapsed_1, peak_1 = benchmark_function(run_vsearch, tmp_fasta)
         rows.append({'hotspot': 1, 'version': 'baseline', 'run': i + 1,
+                     'n_query': 1, 'n_corpus': n_corpus,
                      'seq_len': len(random_sequence), 'elapsed_s': round(elapsed_1, 4), 'peak_kb': round(peak_1 / 1024, 2)})
 
         uc_file = tmp_fasta[:-4] + '.uc'
         uc_index = parse_hits(uc_file)
         uris = list(uc_index.keys())
 
-        # Hotspot 2 baseline: repeated linear .uc file scans per hit
         elapsed_2b, peak_2b = benchmark_function(run_uc_scan, uc_file, uris)
         rows.append({'hotspot': 2, 'version': 'baseline', 'run': i + 1,
+                     'n_query': len(uris), 'n_corpus': n_corpus,
                      'seq_len': len(random_sequence), 'elapsed_s': round(elapsed_2b, 4), 'peak_kb': round(peak_2b / 1024, 2)})
 
-        # Hotspot 2 optimized: parse-once dict lookup
         elapsed_2o, peak_2o = benchmark_function(run_uc_scan_indexed, uc_index, uris)
         rows.append({'hotspot': 2, 'version': 'optimized', 'run': i + 1,
+                     'n_query': len(uris), 'n_corpus': n_corpus,
                      'seq_len': len(random_sequence), 'elapsed_s': round(elapsed_2o, 4), 'peak_kb': round(peak_2o / 1024, 2)})
 
     def avg(hotspot, version, key):
@@ -333,11 +351,16 @@ def run_correctness_check(fsa_path):
 def main(skip_cluster_baseline=False):
     os.makedirs(os.path.join(BASE_DIR, "benchmark"), exist_ok=True)
 
-    sequences = load_fasta(CORPUS_PATH)
-    n = 20
+    all_sequences = load_fasta(CORPUS_PATH)
+    n_total = len(all_sequences)
+    n_holdout = max(1, int(n_total * HOLDOUT_FRACTION))
+    corpus_seqs = all_sequences[:-n_holdout]
+    holdout_seqs = all_sequences[-n_holdout:]
 
-    # Hotspots 1 & 2: averaged over n runs (baseline + optimized)
-    rows, averages = benchmark_search_pipeline(sequences, n)
+    print(f"Corpus: {n_total} total sequences | {len(corpus_seqs)} corpus | {n_holdout} holdout ({HOLDOUT_FRACTION:.0%})")
+
+    n = 20
+    rows, averages = benchmark_search_pipeline(all_sequences, n)
 
     avg_e1b, avg_p1b = averages[(1, 'baseline')]
     avg_e2b, avg_p2b = averages[(2, 'baseline')]
@@ -350,31 +373,46 @@ def main(skip_cluster_baseline=False):
     h1_rows = [r for r in rows if r['hotspot'] == 1]
     avg_seq_len = round(sum(r['seq_len'] for r in h1_rows) / len(h1_rows), 1)
 
+    corpus_tmp = tempfile.NamedTemporaryFile(suffix='.fsa', delete=False, mode='w')
+    corpus_tmp.close()
+    holdout_tmp = tempfile.NamedTemporaryFile(suffix='.fsa', delete=False, mode='w')
+    holdout_tmp.close()
+    write_fasta(corpus_seqs, corpus_tmp.name)
+    write_fasta(holdout_seqs, holdout_tmp.name)
+
+    elapsed_3b = peak_3b = None
     if not skip_cluster_baseline:
-        print("\nRunning hotspot 3 baseline (full cluster)...")
+        print(f"\nRunning hotspot 3 baseline: clustering all {n_total} sequences (full corpus)...")
         elapsed_3b, peak_3b = benchmark_function(run_uclust)
         print_results("Hotspot 3: Full-corpus re-cluster — baseline", elapsed_3b, peak_3b)
 
-    # Hotspot 3 optimized: incremental cluster on only the test sequences
-    print("\nRunning hotspot 3 optimized (incremental cluster)...")
-    elapsed_3o, peak_3o = benchmark_function(run_incremental_uclust, TEST_SEQUENCES_PATH)
+    print(f"\nRunning hotspot 3 optimized: searching {n_holdout} new sequences against corpus of {len(corpus_seqs)}...")
+    elapsed_3o, peak_3o = benchmark_function(run_incremental_uclust, holdout_tmp.name, corpus_tmp.name)
     print_results("Hotspot 3: Incremental cluster on new sequences — optimized", elapsed_3o, peak_3o)
+
+    os.unlink(corpus_tmp.name)
+    os.unlink(holdout_tmp.name)
 
     with open(CSV_OUTPUT, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
         writer.writerow({'hotspot': 1, 'version': 'baseline', 'run': 'AVERAGE',
+                         'n_query': 1, 'n_corpus': n_total,
                          'seq_len': avg_seq_len, 'elapsed_s': round(avg_e1b, 4), 'peak_kb': round(avg_p1b, 2)})
         writer.writerow({'hotspot': 2, 'version': 'baseline', 'run': 'AVERAGE',
+                         'n_query': 'avg_hits', 'n_corpus': n_total,
                          'seq_len': avg_seq_len, 'elapsed_s': round(avg_e2b, 4), 'peak_kb': round(avg_p2b, 2)})
         writer.writerow({'hotspot': 2, 'version': 'optimized', 'run': 'AVERAGE',
+                         'n_query': 'avg_hits', 'n_corpus': n_total,
                          'seq_len': avg_seq_len, 'elapsed_s': round(avg_e2o, 4), 'peak_kb': round(avg_p2o, 2)})
-        if not skip_cluster_baseline:
+        if elapsed_3b is not None:
             writer.writerow({'hotspot': 3, 'version': 'baseline', 'run': 1,
+                             'n_query': n_total, 'n_corpus': n_total,
                              'seq_len': 'full_corpus', 'elapsed_s': round(elapsed_3b, 4), 'peak_kb': round(peak_3b / 1024, 2)})
         writer.writerow({'hotspot': 3, 'version': 'optimized', 'run': 1,
-                         'seq_len': f'{len(load_fasta(TEST_SEQUENCES_PATH))}_seqs', 'elapsed_s': round(elapsed_3o, 4), 'peak_kb': round(peak_3o / 1024, 2)})
+                         'n_query': n_holdout, 'n_corpus': len(corpus_seqs),
+                         'seq_len': f'{n_holdout}_seqs', 'elapsed_s': round(elapsed_3o, 4), 'peak_kb': round(peak_3o / 1024, 2)})
 
     print(f"\nResults written to {CSV_OUTPUT}")
 
