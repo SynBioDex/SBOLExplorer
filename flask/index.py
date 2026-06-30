@@ -112,18 +112,26 @@ def create_parts_index(index_name):
     logger_.log('Index created', True)
 
 
-def bulk_index_parts(parts_response, index_name):
+def index_page(es, parts_page, index_name, uri2rank, term_list):
     """
-    Adds each part as a document to the index.
+    Enriches one page of parts (pagerank/keywords/roles/sbol type) and bulk
+    indexes it. Keeping enrichment + indexing per-page means only one page is
+    ever resident in memory, instead of the whole corpus.
 
     Arguments:
-        parts_response {List} -- List containing all parts from the SPARQL query
+        es -- Elasticsearch client
+        parts_page {List} -- One page of parts from the SPARQL query
         index_name {String} -- Name of the index
+        uri2rank {Dict} -- Pagerank scores
+        term_list {List} -- SO-Ontologies terms (loaded once, reused per page)
     """
-    es = elasticsearch_manager.get_es()
+    add_pagerank(parts_page, uri2rank)
+    add_keywords(parts_page)
+    add_roles(parts_page, term_list)
+    add_sbol_type(parts_page)
 
     def actions():
-        for part in parts_response:
+        for part in parts_page:
             yield {
                 '_index': index_name,
                 '_type': index_name,
@@ -131,12 +139,10 @@ def bulk_index_parts(parts_response, index_name):
                 '_source': part
             }
 
-    logger_.log('Bulk indexing', True)
     try:
-        stats = helpers.bulk(es, actions())
-        logger_.log('Bulk indexing complete', True)
+        helpers.bulk(es, actions())
     except Exception as e:
-        logger_.log(f'[ERROR] Error during bulk indexing: {str(e)}' + '\n'.join(stats[1]), True)
+        logger_.log(f'[ERROR] Error during bulk indexing: {str(e)}', True)
         raise
 
 
@@ -144,30 +150,53 @@ def update_index(uri2rank):
     """
     Main method to update the index.
 
+    Streams parts page-by-page so peak memory stays at one page rather than the
+    full ~300k-part corpus (which OOM-killed indexing on memory-limited hosts).
+
     Args:
         uri2rank: Dictionary of pageranks for each URI
     """
     index_name = config['elasticsearch_index_name']
 
     logger_.log('------------ Updating index ------------', True)
-    logger_.log('******** Query for parts ********', True)
-    parts_response = query.query_parts(indexing=True)
-    logger_.log('******** Query for parts complete ********', True)
 
-    logger_.log('******** Adding parts to new index ********', True)
-    add_pagerank(parts_response, uri2rank)
-    add_keywords(parts_response)
-
-    # Load the SO-Ontologies list once
+    # Load the SO-Ontologies list once; reused for every page.
     with open('so-simplified.json', 'r') as so_json:
         term_list = json.load(so_json)
-    add_roles(parts_response, term_list)
 
-    add_sbol_type(parts_response)
-    create_parts_index(index_name)
-    bulk_index_parts(parts_response, index_name)
+    es = elasticsearch_manager.get_es()
 
-    logger_.log(f'******** Finished adding {len(parts_response)} parts to index ********', True)
+    total = 0
+    if config.get('distributed_search'):
+        # Distributed mode needs cross-endpoint dedup, so fall back to loading
+        # all parts at once (original behavior).
+        logger_.log('******** Query for parts (distributed, full load) ********', True)
+        parts_response = query.query_parts(indexing=True)
+        logger_.log('******** Query for parts complete ********', True)
+        # Create (delete+recreate) only after the query succeeds, so a failed
+        # query leaves the old index intact.
+        create_parts_index(index_name)
+        index_page(es, parts_response, index_name, uri2rank, term_list)
+        total = len(parts_response)
+    else:
+        # Single endpoint: stream page-by-page to keep memory flat.
+        logger_.log('******** Streaming parts into index ********', True)
+        page_num = 0
+        for parts_page in query.query_parts_paged(indexing=True):
+            page_num += 1
+            if page_num == 1:
+                # Delete the old index only once the first page is in hand, so a
+                # query that fails up front doesn't wipe the existing index.
+                create_parts_index(index_name)
+            index_page(es, parts_page, index_name, uri2rank, term_list)
+            total += len(parts_page)
+            logger_.log(f'Indexed page {page_num} ({total} parts so far)', True)
+        if total == 0:
+            # No parts returned: still (re)create an empty index, matching the
+            # original behavior of always producing a fresh index.
+            create_parts_index(index_name)
+
+    logger_.log(f'******** Finished adding {total} parts to index ********', True)
     logger_.log('------------ Successfully updated index ------------\n', True)
 
 
