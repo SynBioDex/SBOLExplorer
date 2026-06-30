@@ -115,6 +115,17 @@ def uclust2clusters():
 
 def update_clusters():
     logger_.log('------------ Updating clusters ------------', True)
+
+    # Re-read config (force a fresh load, not the value cached at import) so a
+    # flag set at runtime via /config is honored. When skip_clustering is set,
+    # skip the (very slow) uclust run and keep the clusters from the previous
+    # run -- update_index will leave the existing clusters_dump untouched.
+    config_manager._config = None
+    if config_manager.load_config().get('skip_clustering'):
+        logger_.log('******** skip_clustering=true: skipping uclust, reusing previous clusters ********', True)
+        logger_.log('------------ Clustering skipped (previous clusters kept) ------------\n', True)
+        return None
+
     logger_.log('******** Query for sequences ********', True)
     sequences_response = query.query_sparql(sequence_query)
     logger_.log('******** Query for sequences complete ********', True)

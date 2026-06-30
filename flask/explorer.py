@@ -76,7 +76,8 @@ def update_index():
     config_manager.save_update_start_time()
 
     clusters = cluster.update_clusters()
-    data_manager.save_clusters(clusters)
+    if clusters is not None:  # None => skip_clustering, keep existing clusters_dump
+        data_manager.save_clusters(clusters)
     
     uri2rank = pagerank.update_pagerank()
     data_manager.save_uri2rank(uri2rank)
