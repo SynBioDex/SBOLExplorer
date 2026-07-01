@@ -10,11 +10,8 @@ class ConfigManager:
     # Each entry: (low, high, example) -- value must satisfy low < x <= high.
     # - pagerank_tolerance: a convergence threshold; >= 0.1 barely iterates
     #   (the incident value 1 stopped pagerank after one iteration).
-    # - uclust_identity: a fraction; vsearch --id fatally rejects anything > 1.0
-    #   (the incident value 1.8 made clustering error out / reuse stale data).
     _NUMERIC_RANGES = {
         'pagerank_tolerance': (0.0, 0.1, '0.0001'),
-        'uclust_identity': (0.0, 1.0, '0.8'),
     }
 
     @classmethod
