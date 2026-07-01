@@ -130,8 +130,17 @@ def index_page(es, parts_page, index_name, uri2rank, term_list):
     add_roles(parts_page, term_list)
     add_sbol_type(parts_page)
 
+    skipped = []
+
     def actions():
         for part in parts_page:
+            # ES rejects the whole bulk request if any _id exceeds 512 bytes,
+            # which would kill the entire page. Skip the (rare) parts with a
+            # pathologically long subject URI; they're logged below, not
+            # silently dropped.
+            if len(part['subject'].encode('utf-8')) > 512:
+                skipped.append(part['subject'])
+                continue
             yield {
                 '_index': index_name,
                 '_type': index_name,
@@ -144,6 +153,9 @@ def index_page(es, parts_page, index_name, uri2rank, term_list):
     except Exception as e:
         logger_.log(f'[ERROR] Error during bulk indexing: {str(e)}', True)
         raise
+    if skipped:
+        logger_.log(f'[WARN] skipped {len(skipped)} part(s) with subject URI > 512 bytes '
+                    f'(ES _id limit); first: {skipped[0][:120]}', True)
 
 
 def update_index(uri2rank):
