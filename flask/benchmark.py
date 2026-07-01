@@ -2,7 +2,6 @@ import argparse
 import csv
 import os
 import random
-import shutil
 import subprocess
 import tempfile
 import time
@@ -288,64 +287,199 @@ def benchmark_search_pipeline(sequences, n=20):
     return rows, averages
 
 
-def save_reference(fsa_path):
+def run_correctness_check():
     """
-    Runs vsearch on each sequence in the FASTA file and saves .uc outputs to benchmark/reference/.
-
-    Arguments:
-        fsa_path {str} -- Path to test sequences FASTA file
+    Structural validity check for hotspot 3 (incremental clustering).
+    Runs usearch_global on the holdout sequences against the corpus and verifies:
+      1. The output contains H records (matches were found)
+      2. Every centroid (parts[9]) in H records exists in the corpus
+      3. Every query (parts[8]) in H records is from the holdout, not the corpus
+      4. All reported percent identities are >= the identity threshold
     """
-    ref_dir = os.path.join(BASE_DIR, "benchmark/reference")
-    os.makedirs(ref_dir, exist_ok=True)
+    all_sequences = load_fasta(CORPUS_PATH)
+    n_total = len(all_sequences)
+    n_holdout = max(1, int(n_total * HOLDOUT_FRACTION))
+    corpus_seqs = all_sequences[:-n_holdout]
+    holdout_seqs = all_sequences[-n_holdout:]
 
-    for header, seq in load_fasta(fsa_path):
-        name = header.split('/')[-2]
-        tmp_fasta = write_to_temp(seq)
-        run_vsearch(tmp_fasta)
-        uc_file = tmp_fasta[:-4] + '.uc'
-        ref_path = os.path.join(ref_dir, f"{name}.uc")
-        shutil.move(uc_file, ref_path)
-        hits = parse_hits(ref_path)
-        print(f"  {name} ({len(seq)}bp): {len(hits)} hits saved")
+    corpus_uris = {header for header, _ in corpus_seqs}
+    holdout_uris = {header for header, _ in holdout_seqs}
 
-    print(f"\nReference outputs saved to {ref_dir}")
+    print(f"Correctness check: {n_holdout} holdout sequences against corpus of {len(corpus_seqs)}...\n")
 
+    corpus_tmp = tempfile.NamedTemporaryFile(suffix='.fsa', delete=False, mode='w')
+    corpus_tmp.close()
+    holdout_tmp = tempfile.NamedTemporaryFile(suffix='.fsa', delete=False, mode='w')
+    holdout_tmp.close()
+    uc_tmp = tempfile.NamedTemporaryFile(suffix='.uc', delete=False, mode='w')
+    uc_tmp.close()
 
-def run_correctness_check(fsa_path):
-    """
-    Verifies the optimized search pipeline returns the same hits as the saved reference.
-    Uses parse_hits (equivalent to load_uc_index in search.py) to validate hotspot 2 fix.
+    write_fasta(corpus_seqs, corpus_tmp.name)
+    write_fasta(holdout_seqs, holdout_tmp.name)
 
-    Arguments:
-        fsa_path {str} -- Path to test sequences FASTA file
-    """
-    ref_dir = os.path.join(BASE_DIR, "benchmark/reference")
+    args = [vsearch_binary_filename, '--usearch_global', holdout_tmp.name,
+            '--db', corpus_tmp.name, '--uc', uc_tmp.name, '--uc_allhits',
+            '--id', UCLUST_IDENTITY, '--iddef', '2',
+            '--maxaccepts', '50', '--maxrejects', '0',
+            '--maxseqlength', '5000', '--minseqlength', '20']
+    subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+
+    h_records = []
+    with open(uc_tmp.name) as f:
+        for line in f:
+            parts = line.split()
+            if parts[0] == 'H':
+                h_records.append((parts[8], parts[9], float(parts[3])))
+
+    os.unlink(corpus_tmp.name)
+    os.unlink(holdout_tmp.name)
+    os.unlink(uc_tmp.name)
+
     all_passed = True
+    threshold = float(UCLUST_IDENTITY) * 100
 
-    for header, seq in load_fasta(fsa_path):
-        name = header.split('/')[-2]
-        ref_path = os.path.join(ref_dir, f"{name}.uc")
-        if not os.path.exists(ref_path):
-            print(f"  SKIP {name}: no reference found — run --save-reference first")
-            continue
+    # Check 1: output has H records
+    if not h_records:
+        print("  FAIL: no H records in output — incremental clustering produced no matches")
+        all_passed = False
+    else:
+        print(f"  PASS: {len(h_records)} H records in output")
 
-        tmp_fasta = write_to_temp(seq)
-        run_vsearch(tmp_fasta)
-        uc_file = tmp_fasta[:-4] + '.uc'
+    # Check 2: all centroids exist in corpus
+    invalid_centroids = [(q, c) for q, c, _ in h_records if c not in corpus_uris]
+    if invalid_centroids:
+        print(f"  FAIL: {len(invalid_centroids)} H records reference centroids not in corpus")
+        for q, c in invalid_centroids[:5]:
+            print(f"    {q} -> {c}")
+        all_passed = False
+    else:
+        print(f"  PASS: all centroids are valid corpus URIs")
 
-        ref_hits = parse_hits(ref_path)
-        new_hits = parse_hits(uc_file)
+    # Check 3: all queries are from holdout
+    invalid_queries = [(q, c) for q, c, _ in h_records if q not in holdout_uris]
+    if invalid_queries:
+        print(f"  FAIL: {len(invalid_queries)} H records have queries not from holdout")
+        all_passed = False
+    else:
+        print(f"  PASS: all query sequences are from holdout")
 
-        if ref_hits == new_hits:
-            print(f"  PASS {name}: {len(ref_hits)} hits match")
-        else:
-            missing = ref_hits.keys() - new_hits.keys()
-            extra = new_hits.keys() - ref_hits.keys()
-            print(f"  FAIL {name}: {len(missing)} hits missing, {len(extra)} extra")
-            all_passed = False
+    # Check 4: all percent identities meet threshold
+    below_threshold = [(q, c, pct) for q, c, pct in h_records if pct < threshold]
+    if below_threshold:
+        print(f"  FAIL: {len(below_threshold)} H records below identity threshold ({threshold}%)")
+        for q, c, pct in below_threshold[:5]:
+            print(f"    {pct}% — {q} -> {c}")
+        all_passed = False
+    else:
+        print(f"  PASS: all percent identities >= {threshold}%")
 
     print("\nAll correctness checks passed." if all_passed else "\nSome correctness checks FAILED.")
     return all_passed
+
+
+def compare_clusters():
+    """
+    Compares incremental clustering vs full re-cluster for holdout sequences.
+    Reuses the full re-cluster .uc file from the benchmark run (no re-clustering needed).
+    For each holdout sequence, reports whether it:
+      - Became a centroid in the full re-cluster (incremental can never assign it to itself)
+      - Was assigned to the same corpus centroid in both approaches
+      - Was assigned to a different corpus centroid (different path, same or different cluster)
+      - Was assigned to a holdout centroid in full re-cluster (incremental misses this)
+    """
+    if not os.path.exists(UCLUST_RESULTS):
+        print(f"ERROR: {UCLUST_RESULTS} not found — run the main benchmark first to generate it.")
+        return False
+
+    all_sequences = load_fasta(CORPUS_PATH)
+    n_total = len(all_sequences)
+    n_holdout = max(1, int(n_total * HOLDOUT_FRACTION))
+    corpus_seqs = all_sequences[:-n_holdout]
+    holdout_seqs = all_sequences[-n_holdout:]
+
+    corpus_uris = {h for h, _ in corpus_seqs}
+    holdout_uris = {h for h, _ in holdout_seqs}
+
+    # Parse full re-cluster: classify each holdout sequence
+    full_is_centroid = set()       # holdout sequences that became centroids
+    full_corpus_centroid = {}      # holdout -> corpus centroid
+    full_holdout_centroid = {}     # holdout -> holdout centroid (incremental can't find these)
+
+    with open(UCLUST_RESULTS) as f:
+        for line in f:
+            parts = line.split()
+            if parts[0] == 'S' and parts[8] in holdout_uris:
+                full_is_centroid.add(parts[8])
+            elif parts[0] == 'H' and parts[8] in holdout_uris:
+                centroid = parts[9]
+                if centroid in corpus_uris:
+                    full_corpus_centroid[parts[8]] = centroid
+                elif centroid in holdout_uris:
+                    full_holdout_centroid[parts[8]] = centroid
+
+    # Run usearch_global on holdout against corpus
+    corpus_tmp = tempfile.NamedTemporaryFile(suffix='.fsa', delete=False, mode='w')
+    corpus_tmp.close()
+    holdout_tmp = tempfile.NamedTemporaryFile(suffix='.fsa', delete=False, mode='w')
+    holdout_tmp.close()
+    uc_tmp = tempfile.NamedTemporaryFile(suffix='.uc', delete=False, mode='w')
+    uc_tmp.close()
+
+    write_fasta(corpus_seqs, corpus_tmp.name)
+    write_fasta(holdout_seqs, holdout_tmp.name)
+
+    args = [vsearch_binary_filename, '--usearch_global', holdout_tmp.name,
+            '--db', corpus_tmp.name, '--uc', uc_tmp.name, '--uc_allhits',
+            '--id', UCLUST_IDENTITY, '--iddef', '2',
+            '--maxaccepts', '50', '--maxrejects', '0',
+            '--maxseqlength', '5000', '--minseqlength', '20']
+    subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+
+    incremental_centroids = {}
+    with open(uc_tmp.name) as f:
+        for line in f:
+            parts = line.split()
+            if parts[0] == 'H':
+                if parts[8] not in incremental_centroids:
+                    incremental_centroids[parts[8]] = set()
+                incremental_centroids[parts[8]].add(parts[9])
+
+    os.unlink(corpus_tmp.name)
+    os.unlink(holdout_tmp.name)
+    os.unlink(uc_tmp.name)
+
+    # Compare and report
+    print(f"\nCluster comparison: {n_holdout} holdout sequences\n")
+
+    # Category 1: became centroids in full re-cluster
+    centroid_matched = sum(1 for u in full_is_centroid if u in incremental_centroids)
+    centroid_missed = len(full_is_centroid) - centroid_matched
+    print(f"Holdout sequences that are centroids in full re-cluster: {len(full_is_centroid)}")
+    print(f"  Found a corpus match in incremental:  {centroid_matched}")
+    print(f"  No corpus match (new centroid missed): {centroid_missed}")
+
+    # Category 2: assigned to a corpus centroid in full re-cluster
+    agreed = sum(1 for u, c in full_corpus_centroid.items()
+                 if u in incremental_centroids and c in incremental_centroids[u])
+    disagreed = sum(1 for u, c in full_corpus_centroid.items()
+                    if u in incremental_centroids and c not in incremental_centroids[u])
+    inc_missed = sum(1 for u in full_corpus_centroid if u not in incremental_centroids)
+    print(f"\nHoldout sequences assigned to corpus centroid in full re-cluster: {len(full_corpus_centroid)}")
+    print(f"  Incremental agrees (same centroid):     {agreed}")
+    print(f"  Incremental disagrees (diff centroid):  {disagreed}")
+    print(f"  Incremental found no match:             {inc_missed}")
+
+    # Category 3: assigned to another holdout centroid
+    print(f"\nHoldout sequences assigned to another holdout centroid: {len(full_holdout_centroid)}")
+    print(f"  (incremental cannot find these — holdout centroids not in corpus)")
+
+    # Category 4: unmatched in full re-cluster
+    all_assigned = full_is_centroid | set(full_corpus_centroid) | set(full_holdout_centroid)
+    unmatched = holdout_uris - all_assigned
+    print(f"\nHoldout sequences unmatched in both:    {len(unmatched)}")
+
+    total_missed = centroid_missed + inc_missed + len(full_holdout_centroid)
+    print(f"\nTotal cluster relationships missed by incremental: {total_missed} / {n_holdout} holdout sequences")
 
 
 def main(skip_cluster_baseline=False):
@@ -419,14 +553,14 @@ def main(skip_cluster_baseline=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--save-reference', metavar='FSA', help='Save reference outputs for test sequences')
-    parser.add_argument('--correctness', metavar='FSA', help='Run correctness check against saved reference')
+    parser.add_argument('--correctness', action='store_true', help='Structural validity check for incremental clustering output')
+    parser.add_argument('--compare-clusters', action='store_true', help='Compare incremental vs full re-cluster assignments for holdout sequences')
     parser.add_argument('--no-cluster-baseline', action='store_true', help='Skip hotspot 3 full-corpus baseline (slow)')
     args = parser.parse_args()
 
-    if args.save_reference:
-        save_reference(args.save_reference)
-    elif args.correctness:
-        run_correctness_check(args.correctness)
+    if args.correctness:
+        run_correctness_check()
+    elif args.compare_clusters:
+        compare_clusters()
     else:
         main(skip_cluster_baseline=args.no_cluster_baseline)
