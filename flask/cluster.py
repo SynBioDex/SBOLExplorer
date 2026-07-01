@@ -113,30 +113,68 @@ def uclust2clusters():
 
     return clusters
 
+def hash_exact_duplicates(sequences):
+    """
+    Groups sequences by exact match to identify duplicates.
+    Returns a dictionary of URIs mapped to the full group set (including self).
+    Callers must exclude the key URI when iterating.
+
+    Arguments:
+        sequences {list} -- A list of sequences.
+
+    Returns:
+        dict -- A dictionary mapping URIs to their duplicate group set.
+    """
+    seq_to_uris = {}
+    for sequence in sequences:
+        seq_to_uris.setdefault(sequence['sequence'], set()).add(sequence['subject'])
+
+    duplicates = {}
+    for uris in seq_to_uris.values():
+        if len(uris) > 1:
+            for uri in uris:
+                duplicates[uri] = uris  # shared set reference — callers must exclude self
+    return duplicates
+
 def update_clusters():
     logger_.log('------------ Updating clusters ------------', True)
-
-    # Re-read config (force a fresh load, not the value cached at import) so a
-    # flag set at runtime via /config is honored. skip_clustering DEFAULTS TO
-    # TRUE: the (very slow) uclust run is skipped and the previous clusters are
-    # reused unless config explicitly sets skip_clustering to false. This lets
-    # deployments (e.g. Azure) that can't edit config.json avoid the multi-hour
-    # clustering by default; a frontend can later set it false to force a rerun.
-    config_manager._config = None
-    if config_manager.load_config().get('skip_clustering', True):
-        logger_.log('******** skip_clustering=true: skipping uclust, reusing previous clusters ********', True)
-        logger_.log('------------ Clustering skipped (previous clusters kept) ------------\n', True)
-        return None
 
     logger_.log('******** Query for sequences ********', True)
     sequences_response = query.query_sparql(sequence_query)
     logger_.log('******** Query for sequences complete ********', True)
     write_fasta(sequences_response)
 
-    logger_.log('******** Running uclust ********', True)
-    run_uclust()
-    logger_.log('******** Running uclust complete ********', True)
+    clusters = hash_exact_duplicates(sequences_response)
+    logger_.log(f'******** Found {len(clusters)} URIs with exact duplicates ********', True)
 
-    analyze_uclust()
-    logger_.log('------------ Successfully updated clusters ------------\n', True)
-    return uclust2clusters()
+    return clusters
+
+
+
+# def update_clusters():
+#     logger_.log('------------ Updating clusters ------------', True)
+#
+#     # Re-read config (force a fresh load, not the value cached at import) so a
+#     # flag set at runtime via /config is honored. skip_clustering DEFAULTS TO
+#     # TRUE: the (very slow) uclust run is skipped and the previous clusters are
+#     # reused unless config explicitly sets skip_clustering to false. This lets
+#     # deployments (e.g. Azure) that can't edit config.json avoid the multi-hour
+#     # clustering by default; a frontend can later set it false to force a rerun.
+#     config_manager._config = None
+#     if config_manager.load_config().get('skip_clustering', True):
+#         logger_.log('******** skip_clustering=true: skipping uclust, reusing previous clusters ********', True)
+#         logger_.log('------------ Clustering skipped (previous clusters kept) ------------\n', True)
+#         return None
+#
+#     logger_.log('******** Query for sequences ********', True)
+#     sequences_response = query.query_sparql(sequence_query)
+#     logger_.log('******** Query for sequences complete ********', True)
+#     write_fasta(sequences_response)
+#
+#     logger_.log('******** Running uclust ********', True)
+#     run_uclust()
+#     logger_.log('******** Running uclust complete ********', True)
+#
+#     analyze_uclust()
+#     logger_.log('------------ Successfully updated clusters ------------\n', True)
+#     return uclust2clusters()

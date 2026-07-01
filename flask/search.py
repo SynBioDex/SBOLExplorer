@@ -365,7 +365,7 @@ def create_bindings(es_response, clusters, allowed_graphs, allowed_subjects=None
         if subject in cluster_duplicates:
             _score /= 2.0
         elif subject in clusters:
-            cluster_duplicates.update(clusters[subject])
+            cluster_duplicates.update(clusters[subject] - {subject})
 
         if _source.get('type') is not None and 'http://sbols.org/v2#Sequence' in _source.get('type'):
             _score /= 10.0
@@ -469,7 +469,7 @@ def create_similar_criteria(criteria, clusters):
     if subject not in clusters or not clusters[subject]:
         return 'FILTER (?subject != ?subject)'
 
-    filters = ' || '.join(f'?subject = <{duplicate}>' for duplicate in clusters[subject])
+    filters = ' || '.join(f'?subject = <{duplicate}>' for duplicate in clusters[subject] - {subject})
     return f'FILTER ({filters})'
 
 
