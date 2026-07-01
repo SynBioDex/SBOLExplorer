@@ -117,11 +117,13 @@ def update_clusters():
     logger_.log('------------ Updating clusters ------------', True)
 
     # Re-read config (force a fresh load, not the value cached at import) so a
-    # flag set at runtime via /config is honored. When skip_clustering is set,
-    # skip the (very slow) uclust run and keep the clusters from the previous
-    # run -- update_index will leave the existing clusters_dump untouched.
+    # flag set at runtime via /config is honored. skip_clustering DEFAULTS TO
+    # TRUE: the (very slow) uclust run is skipped and the previous clusters are
+    # reused unless config explicitly sets skip_clustering to false. This lets
+    # deployments (e.g. Azure) that can't edit config.json avoid the multi-hour
+    # clustering by default; a frontend can later set it false to force a rerun.
     config_manager._config = None
-    if config_manager.load_config().get('skip_clustering'):
+    if config_manager.load_config().get('skip_clustering', True):
         logger_.log('******** skip_clustering=true: skipping uclust, reusing previous clusters ********', True)
         logger_.log('------------ Clustering skipped (previous clusters kept) ------------\n', True)
         return None
