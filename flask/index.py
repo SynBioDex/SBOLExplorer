@@ -19,8 +19,8 @@ PARTS_COLLECTION_SCHEMA = {
         {'name': 'name',        'type': 'string', 'optional': True},
         {'name': 'description', 'type': 'string', 'optional': True},
         {'name': 'type',        'type': 'string', 'optional': True, 'facet': True},
-        {'name': 'role',        'type': 'string', 'optional': True},
-        {'name': 'sboltype',    'type': 'string', 'optional': True},
+        {'name': 'role',        'type': 'string', 'optional': True, 'facet': True},
+        {'name': 'sboltype',    'type': 'string', 'optional': True, 'facet': True},
         {'name': 'keywords',    'type': 'string', 'optional': True},
         {'name': 'graph',       'type': 'string', 'facet': True},
         {'name': 'pagerank',    'type': 'float'},
@@ -49,6 +49,42 @@ def create_parts_collection(collection_name):
     schema = {'name': collection_name, **PARTS_COLLECTION_SCHEMA}
     client.collections.create(schema)
     logger_.log('Collection created', True)
+
+
+def upsert_synonyms(collection_name):
+    """
+    Registers curated search synonyms (domain abbreviations, e.g. lac<->lacI,
+    rfp<->mRFP1, "ribosome binding site"<->rbs) on the collection.
+
+    Synonyms are COLLECTION-SCOPED, so create_parts_collection() wipes them every
+    time it recreates the collection -- this MUST run on every reindex or the
+    recall fixes silently disappear. The list lives in synonyms.json (curated
+    separately from code); each entry is {"id", "synonyms": [...]} for a
+    multi-way set, optionally with "root" for a one-way expansion.
+
+    Missing/empty synonyms.json is non-fatal: indexing proceeds without synonyms.
+    """
+    try:
+        with open('synonyms.json', 'r') as f:
+            synonym_sets = json.load(f)
+    except FileNotFoundError:
+        logger_.log('No synonyms.json found -> skipping synonyms', True)
+        return
+
+    collection = typesense_manager.get_client().collections[collection_name]
+
+    # Clear existing synonyms first so the collection matches synonyms.json
+    # exactly -- keeps this idempotent even when called standalone (not via a
+    # full reindex, which would already recreate the collection from scratch).
+    for existing in collection.synonyms.retrieve().get('synonyms', []):
+        collection.synonyms[existing['id']].delete()
+
+    for entry in synonym_sets:
+        body = {'synonyms': entry['synonyms']}
+        if entry.get('root'):
+            body['root'] = entry['root']
+        collection.synonyms.upsert(entry['id'], body)
+    logger_.log(f'Registered {len(synonym_sets)} synonym set(s)', True)
 
 
 def add_pagerank(parts_response, uri2rank):
@@ -153,6 +189,7 @@ def update_index(uri2rank):
     add_sbol_type(parts_response)
     create_parts_collection(collection_name)
     bulk_index_parts(parts_response, collection_name)
+    upsert_synonyms(collection_name)
 
     logger_.log(f'******** Finished adding {len(parts_response)} parts to index ********', True)
     logger_.log('------------ Successfully updated index ------------\n', True)

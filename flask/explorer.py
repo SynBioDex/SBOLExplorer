@@ -218,5 +218,30 @@ def search_by_string():
         log.error(f'Error during search by string: {e}')
         raise
 
+@app.route('/facets', methods=['GET'])
+def facets_by_string():
+    """
+    Return facet counts (part role, part type, ...) for a text query, used to
+    build the left-hand filter sidebar. Served entirely by Typesense -- NO SPARQL.
+
+    Example:  GET /facets?query=rbs&facet_by=role,type,sboltype
+    Response: {"found": 491,
+               "facets": {"role": [{"value": "...Composite", "count": 163}, ...],
+                          "type": [...], "sboltype": [...]}}
+    """
+    try:
+        client = typesense_manager.get_client()
+        collection_name = config_manager.get_typesense_collection_name()
+        if not _collection_exists(client, collection_name):
+            abort(503, 'Typesense is not working or the collection does not exist.')
+
+        query = request.args.get('query', '')
+        facet_by = request.args.get('facet_by', 'role,type,sboltype')
+        facet_fields = [f.strip() for f in facet_by.split(',') if f.strip()]
+        return jsonify(search.get_facets(query, facet_fields))
+    except Exception as e:
+        log.error(f'Error during facet search: {e}')
+        raise
+
 if __name__ == "__main__":
     app.run(debug=False, threaded=True) # threaded=True

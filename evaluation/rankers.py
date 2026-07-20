@@ -162,9 +162,60 @@ def ranker_weighted_sum(query, alpha=0.5, exact_boost=0.5, pr_scale=1e6):
     return [d for d, _ in scored]
 
 
+def ranker_es_equation(query, pool_sort='_text_match(buckets: 1):desc,pagerank:desc'):
+    """
+    FAITHFUL PORT of the old Elasticsearch ranking (master branch), for
+    calibration. master/search.py ranks with a function_score whose script is:
+
+        script:     _score * Math.log(pagerank + 1)               # ln, natural log
+
+    BUT master sets NO `boost_mode`, and ES defaults boost_mode to MULTIPLY, so
+    the effective score master actually computes is:
+
+        final = _score * (_score * ln(pagerank+1)) = _score^2 * ln(pagerank+1)
+
+    i.e. the text score is SQUARED. We reproduce that here: `text_match` is the
+    Typesense analog of ES's `_score`, squared, times ln(pagerank+1). NO
+    normalization, NO pr_scale knob (those belong to the new weighted_sum/
+    multiplicative rankers, which are left intact).
+
+    Caveat: ES `_score` (BM25) and Typesense `text_match` are different engines'
+    relevance scores, so this is the ES *equation* on Typesense's index, not
+    byte-identical ES output.
+
+    pool_sort controls how the candidate pool is pulled:
+      - buckets:1 (default) -- pagerank-aware pool; text score is flattened into
+        one bucket, so the re-score is pagerank-dominated (squaring text has no
+        effect). This is the faithful "old /search" pool.
+      - '_text_match:desc,pagerank:desc' -- RAW continuous text score pool; lets
+        text_match (and its square) actually reshuffle results, closer to how ES
+        ranks on continuous BM25. Risk: with >pool exact-name matches, a canonical
+        high-pagerank part can fall OUT of the pool entirely (the original bug).
+    """
+    hits = _raw_search(query, pool_sort, per_page=CANDIDATE_POOL)
+    if not hits:
+        return []
+    scored = []
+    seen = set()
+    for h in hits:
+        doc = h['document']
+        did = doc.get('displayId')
+        if not did or did in seen:
+            continue
+        seen.add(did)
+        pr = doc.get('pagerank', 0) or 0
+        tm = h.get('text_match', 0)
+        score = tm * tm * log1p(pr)   # _score^2 * ln(pagerank + 1)  (master's real boost_mode=multiply)
+        scored.append((did, score))
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [d for d, _ in scored]
+
+
 # Registry the runner iterates over. Add new strategies here.
 # Original strategies are kept untouched for experiment reproducibility.
 RANKERS = {
+    'es_equation(ln)': ranker_es_equation,       # faithful old-ES baseline: text^2 * ln(pr+1), buckets:1 pool
+    'es_eq(rawpool)': lambda q: ranker_es_equation(q, '_text_match:desc,pagerank:desc'),  # raw continuous text pool
     'current(buckets10)': ranker_current,
     'buckets1': ranker_buckets1,
     'multiplicative': ranker_multiplicative,

@@ -89,6 +89,50 @@ def search_es(es_query: str) -> Dict:
         logger_.log("search_es(es_query: str)")
         raise
 
+def get_facets(query_string: str, facet_fields: List[str]) -> Dict:
+    """
+    Return facet counts for a text query WITHOUT fetching the documents.
+
+    A "facet" is a category field (part role, part type, ...). For the current
+    query's matching set, Typesense counts how many parts fall under each value
+    -- e.g. for query "rbs": role "Composite" -> 163, "Coding" -> 9. Those are the
+    numbers shown in the left-hand filter dropdowns of the SynBioHub UI.
+
+    IMPORTANT: the counts are computed entirely by Typesense over the indexed
+    facet fields -- NO SPARQL / Virtuoso call happens here. A field can only be
+    faceted if it was declared with {'facet': True} in the collection schema
+    (index.py) at index-build time, which requires a reindex to take effect.
+
+    Args:
+        query_string: the user's search text (same string as /search); '' -> all.
+        facet_fields: field names to facet on, e.g. ['role', 'type', 'sboltype'].
+
+    Returns:
+        {'found': <total matches>,
+         'facets': {'role': [{'value': ..., 'count': ...}, ...], ...}}
+    """
+    collection_name = config_manager.get_typesense_collection_name()
+    collection = typesense_manager.get_client().collections[collection_name]
+
+    params = {
+        'q': query_string or '*',       # '*' = match everything (empty query)
+        'query_by': TEXT_QUERY_BY,
+        'num_typos': '2',
+        'facet_by': ','.join(facet_fields),
+        'max_facet_values': 100,        # distinct values returned per facet
+        'per_page': 1,                  # we only want the counts, not the docs
+    }
+    response = collection.documents.search(params)
+
+    facets = {}
+    for facet in response.get('facet_counts', []):
+        facets[facet['field_name']] = [
+            {'value': c['value'], 'count': c['count']}
+            for c in facet.get('counts', [])
+        ]
+    return {'found': response.get('found', 0), 'facets': facets}
+
+
 def _weighted_rerank(hits: List[Dict], query: str) -> List[Dict]:
     """
     Re-rank Typesense hits by  alpha*norm_text + (1-alpha)*norm_pr + boost*exact.
