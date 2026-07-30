@@ -69,8 +69,6 @@ def startup():
         log.error(f'Error during startup: {e}')
         raise
     
-startup()
-
 def update_index():
     logger_.log('============ STARTING INDEXING ============\n\n', True)
     config_manager.save_update_start_time()
@@ -213,6 +211,12 @@ def search_by_string():
     except Exception as e:
         log.error(f'Error during search by string: {e}')
         raise
+
+# Run startup only after every function it may call has been defined. The
+# previous module-level call appeared before update_index(), so a fresh
+# Elasticsearch volume always failed with NameError while trying to create its
+# first index.
+startup()
 
 if __name__ == "__main__":
     app.run(debug=False, threaded=True) # threaded=True

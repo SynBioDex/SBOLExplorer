@@ -1,0 +1,45 @@
+FROM ubuntu:22.04
+
+# SBOLExplorer currently vendors an x86-64 vsearch binary. Pin this image to
+# amd64 explicitly so an arm64 builder cannot produce an image that starts but
+# fails only when the first sequence search tries to execute that binary.
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/New_York
+
+RUN test "$(dpkg --print-architecture)" = "amd64"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates cron python3 python3-pip python3-venv tzdata \
+    && ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime \
+    && dpkg-reconfigure -f noninteractive tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/sbolexplorer-venv
+ENV PATH=/opt/sbolexplorer-venv/bin:$PATH
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
+
+WORKDIR /SBOLExplorer/flask
+COPY . .
+
+# Build either the standalone default (`config.json`) or the SynBioHub-wired
+# variant (`docker/config-synbiohub.json`) from this exact checked-out source.
+ARG EXPLORER_CONFIG=config.json
+RUN crontab update.cron \
+    && mkdir -p /mnt/config /mnt/data \
+    && cp "$EXPLORER_CONFIG" /mnt/config/config.json \
+    && rm -rf dumps config.json \
+    && ln -s /mnt/data dumps \
+    && ln -s /mnt/config/config.json config.json
+
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
+ENV FLASK_APP=explorer.py
+ENV FLASK_ENV=development
+
+EXPOSE 13162
+
+CMD ["flask", "run", "--host=0.0.0.0", "--port=13162"]
