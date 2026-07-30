@@ -212,10 +212,8 @@ def search_by_string():
         log.error(f'Error during search by string: {e}')
         raise
 
-# Run startup only after every function it may call has been defined. The
-# previous module-level call appeared before update_index(), so a fresh
-# Elasticsearch volume always failed with NameError while trying to create its
-# first index.
+# Initialize Explorer after all startup dependencies, including update_index,
+# have been defined.
 startup()
 
 if __name__ == "__main__":

@@ -219,11 +219,8 @@ def send_query(query, endpoint):
 
     Returns: List of parts from Virtuoso
     """
-    # Index maintenance intentionally scans all named graphs. Sending an empty
-    # `default-graph-uri=` happens to be ignored by Virtuoso, but protocol-
-    # compliant stores treat it as an explicit empty dataset and correctly
-    # return no rows. Omit the parameter to request the store's union default;
-    # scoped user searches still carry explicit FROM clauses in their query.
+    # Index maintenance queries use the endpoint's complete dataset. Searches
+    # that require a narrower dataset express it with FROM clauses in SPARQL.
     params = {'query': query}
 
     url = f"{endpoint}{urllib.parse.urlencode(params)}"

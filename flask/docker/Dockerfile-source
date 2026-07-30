@@ -1,8 +1,6 @@
 FROM ubuntu:22.04
 
-# SBOLExplorer currently vendors an x86-64 vsearch binary. Pin this image to
-# amd64 explicitly so an arm64 builder cannot produce an image that starts but
-# fails only when the first sequence search tries to execute that binary.
+# The vendored vsearch executable is x86-64, so source images are amd64-only.
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/New_York
 

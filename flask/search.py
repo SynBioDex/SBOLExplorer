@@ -183,11 +183,9 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
         logger_.log("search_es_allowed_subjects_empty_string")
         raise
 def parse_sparql_query(sparql_query, is_count_query):
-    # Search visibility is encoded in dataset clauses before the first WHERE.
-    # The old row-query regex assumed `?type` was the final projected field,
-    # so it stopped recognizing FROM clauses when SynBioHub added `?sbolType`
-    # and `?role`. Extract the clauses themselves instead of depending on the
-    # projection layout; this works for both row and nested count templates.
+    # Search visibility is encoded by every FROM clause before the first WHERE.
+    # Dataset extraction is independent of the SELECT projection and shared by
+    # row and nested count templates.
     query_head = re.split(r'\bWHERE\b', sparql_query, maxsplit=1, flags=re.IGNORECASE)[0]
     _from = ' '.join(FROM_CLAUSE_PATTERN.findall(query_head))
 
