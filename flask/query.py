@@ -219,10 +219,9 @@ def send_query(query, endpoint):
 
     Returns: List of parts from Virtuoso
     """
+    # Index maintenance queries use the endpoint's complete dataset. Searches
+    # that require a narrower dataset express it with FROM clauses in SPARQL.
     params = {'query': query}
-
-    if endpoint == config['sparql_endpoint']:
-        params['default-graph-uri'] = ''  # Modify this if needed
 
     url = f"{endpoint}{urllib.parse.urlencode(params)}"
     headers = {'Accept': 'application/json'}

@@ -13,8 +13,7 @@ logger_ = Logger()
 wor_client_ = WORClient()
 
 # Compile regex patterns
-FROM_COUNT_PATTERN = re.compile(r'SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {')
-FROM_NORMAL_PATTERN = re.compile(r'\?type\n(.*)\s*WHERE {')
+FROM_CLAUSE_PATTERN = re.compile(r'FROM\s+<[^>]+>', re.IGNORECASE)
 CRITERIA_PATTERN = re.compile(r'WHERE {\s*(.*)\s*\?subject a \?type \.')
 OFFSET_PATTERN = re.compile(r'OFFSET (\d+)')
 LIMIT_PATTERN = re.compile(r'LIMIT (\d+)')
@@ -184,9 +183,11 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
         logger_.log("search_es_allowed_subjects_empty_string")
         raise
 def parse_sparql_query(sparql_query, is_count_query):
-    # Find FROM clause
-    _from_search = FROM_COUNT_PATTERN.search(sparql_query) if is_count_query else FROM_NORMAL_PATTERN.search(sparql_query)
-    _from = _from_search.group(1).strip() if _from_search else ''
+    # Search visibility is encoded by every FROM clause before the first WHERE.
+    # Dataset extraction is independent of the SELECT projection and shared by
+    # row and nested count templates.
+    query_head = re.split(r'\bWHERE\b', sparql_query, maxsplit=1, flags=re.IGNORECASE)[0]
+    _from = ' '.join(FROM_CLAUSE_PATTERN.findall(query_head))
 
     # Find criteria
     criteria_search = CRITERIA_PATTERN.search(sparql_query)
