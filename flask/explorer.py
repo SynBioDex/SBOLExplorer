@@ -9,6 +9,7 @@ import threading
 import time
 import cluster
 import pagerank
+import basket
 import index
 import search
 import query
@@ -80,6 +81,10 @@ def update_index():
     uri2rank = pagerank.update_pagerank()
     data_manager.save_uri2rank(uri2rank)
 
+    device_baskets, part_roles = basket.update_baskets()
+    data_manager.save_device_baskets(device_baskets)
+    data_manager.save_part_roles(part_roles)
+
     index.update_index(data_manager.get_uri2rank())
     
     query.memoized_query_sparql.cache_clear()
@@ -131,6 +136,16 @@ def incremental_update():
     try:
         updates = request.get_json()
         index.incremental_update(updates, data_manager.get_uri2rank())
+
+        subjects = [part['subject'] for part in updates.get('partsToAdd', [])]
+        device_baskets, part_roles = basket.refresh_device_baskets(
+            data_manager.get_device_baskets(), data_manager.get_part_roles(), subjects
+        )
+        for subject in updates.get('partsToRemove', []):
+            device_baskets = basket.remove_device_basket(device_baskets, subject)
+        data_manager.save_device_baskets(device_baskets)
+        data_manager.save_part_roles(part_roles)
+
         success_message = 'Successfully incrementally updated parts'
         logger_.log(success_message)
         return success_message
@@ -143,6 +158,10 @@ def incremental_remove():
     try:
         subject = request.args.get('subject')
         index.incremental_remove(subject)
+
+        device_baskets = basket.remove_device_basket(data_manager.get_device_baskets(), subject)
+        data_manager.save_device_baskets(device_baskets)
+
         success_message = f'Successfully incrementally removed: {subject}'
         logger_.log(success_message)
         return success_message
@@ -195,6 +214,37 @@ def sparql_search_endpoint():
             
     except Exception as e:
         log.error(f'Error during SPARQL search: {e}')
+        raise
+
+@app.route('/recommend', methods=['GET'])
+def recommend():
+    try:
+        subject = request.args.get('subject')
+        if not subject:
+            return jsonify(error="Missing required 'subject' parameter"), 400
+        cart = [s.strip() for s in subject.split(',') if s.strip()]
+
+        role = request.args.get('role')
+        config = config_manager.load_config()
+        limit = int(request.args.get('limit', float(config.get('basket_top_k', basket.DEFAULT_TOP_K))))
+        min_count = int(float(config.get('basket_min_count', basket.DEFAULT_MIN_COUNT)))
+
+        # When filtering by role, don't truncate to `limit` until after filtering
+        rules, matched_size = basket.recommend(
+            data_manager.get_device_baskets(), cart, min_count=min_count,
+            top_k=None if role else limit
+        )
+        if role:
+            part_roles = data_manager.get_part_roles()
+            rules = [rule for rule in rules if part_roles.get(rule[0]) == role]
+
+        recommendations = [
+            {'uri': uri, 'confidence': confidence, 'lift': lift, 'count': count}
+            for uri, confidence, lift, count in rules[:limit]
+        ]
+        return jsonify({'recommendations': recommendations, 'matchedCartSize': matched_size, 'requestedCartSize': len(cart)})
+    except Exception as e:
+        log.error(f'Error during recommend: {e}')
         raise
 
 @app.route('/search', methods=['GET'])

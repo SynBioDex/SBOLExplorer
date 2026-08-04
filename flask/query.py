@@ -113,6 +113,44 @@ def query_parts_paged(_from='', criteria='', indexing=False, page_size=10000):
             break
         offset += page_size
 
+def query_device_components(criteria='', page_size=10000):
+    """
+    Streaming query of device composition: for every top-level device
+    (ComponentDefinition), yields the sub-parts referenced by its
+    sbol2:component -> sbol2:definition edges. This is the "basket" relation
+    for market-basket-style part recommendations (parts assembled into the
+    same circuit).
+
+    Args:
+        criteria: Optional extra WHERE-clause criteria, e.g. a FILTER on ?parent
+            to fetch a single device's current composition instead of all of them
+        page_size: Rows per page
+
+    Returns: Generator yielding pages of {parent, childDef, childDisplayId, childRole} dicts
+    """
+    query_body = f'''
+    SELECT DISTINCT ?parent ?childDef ?childDisplayId ?childRole
+    WHERE {{
+        {criteria}
+        ?parent sbh:topLevel ?parent .
+        ?parent sbol2:component ?comp .
+        ?comp sbol2:definition ?childDef .
+        OPTIONAL {{ ?childDef sbol2:displayId ?childDisplayId . }}
+        OPTIONAL {{ ?childDef sbol2:role ?childRole . }}
+    }}
+    '''
+    endpoint = config['sparql_endpoint']
+    offset = 0
+    while True:
+        full_query = f"{QUERY_PREFIX} {query_body} OFFSET {offset} LIMIT {page_size}"
+        page = send_query(full_query, endpoint)
+        if not page:
+            break
+        yield page
+        if len(page) < page_size:
+            break
+        offset += page_size
+
 @lru_cache(maxsize=32)
 def memoized_query_sparql(query):
     """
