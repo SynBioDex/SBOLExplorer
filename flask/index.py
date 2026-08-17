@@ -19,8 +19,15 @@ def add_pagerank(parts_response, uri2rank):
         parts_response {List} -- List containing all parts from the SPARQL query
         uri2rank {Dict} -- Dictionary of each part and its calculated pagerank score
     """
+    # Parts not yet in uri2rank (new / incrementally-indexed, before the next full
+    # PageRank recompute) get a FLOOR value, not 1. Real PageRanks are tiny
+    # (~1e-6..1e-3), so the old default of 1 made a brand-new part outrank every
+    # canonical part -- search ranks by _score * ln(pagerank+1), and ln(1+1) is
+    # ~1000x ln(1+0.0005). A new, unused part has no incoming links, so the lowest
+    # known PageRank is the honest placeholder until the next full reindex fixes it.
+    default_rank = min(uri2rank.values()) if uri2rank else 1e-5
     for part in parts_response:
-        part['pagerank'] = uri2rank.get(part['subject'], 1)
+        part['pagerank'] = uri2rank.get(part['subject'], default_rank)
 
 
 def add_keywords(parts_response):
@@ -223,28 +230,32 @@ def delete_subject(subject):
     es = elasticsearch_manager.get_es()
 
     body = {
-        'query': {
-            'bool': {
-                'must': [
-                    {'ids': {'values': subject}}
-                ]
-            }
-        },
+        # ES `ids` expects a LIST of ids. Passing the bare `subject` string made
+        # ES iterate the URI character-by-character, so nothing matched and the
+        # part was never deleted (issue #159: removed / made-private parts linger).
+        'query': {'ids': {'values': [subject]}},
         'conflicts': 'proceed'
     }
-    es.delete_by_query(index=index_name, doc_type=index_name, body=body)
+    # refresh=True: a removed / made-private part leaves search results at once.
+    es.delete_by_query(index=index_name, doc_type=index_name, body=body, refresh=True)
 
 
 def index_part(part):
-    delete_subject(part['subject'])
     index_name = config['elasticsearch_index_name']
     es = elasticsearch_manager.get_es()
-    es.index(index=index_name, doc_type=index_name, id=part['subject'], body=part)
+    # id = subject makes this an upsert, so no separate delete is needed.
+    # refresh='wait_for' blocks until the part is visible to search, so a
+    # just-uploaded part shows up immediately instead of after the next ES
+    # refresh interval (issue #159 / #158: private parts searchable on upload).
+    es.index(index=index_name, doc_type=index_name, id=part['subject'], body=part,
+             refresh='wait_for')
 
 
 def refresh_index(subject, uri2rank):
     delete_subject(subject)
-    part_response = query.query_parts('', f'FILTER (?subject = <{subject}>)', True)
+    # use_cache=False: read the just-changed part fresh from Virtuoso, never from
+    # the memoized query cache (which could hold a stale 'not found' or old graph).
+    part_response = query.query_parts('', f'FILTER (?subject = <{subject}>)', True, use_cache=False)
 
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)

@@ -28,13 +28,17 @@ QUERY_PREFIX = '''
     PREFIX ncbi: <http://www.ncbi.nlm.nih.gov#>
 '''
 
-def query_parts(_from='', criteria='', indexing=False):
+def query_parts(_from='', criteria='', indexing=False, use_cache=True):
     """
     Gets all parts from Virtuoso.
     Args:
         _from: Graph the parts are from
         criteria: Any additional criteria
         indexing: Whether this query is being called during indexing
+        use_cache: Serve from the LRU query cache. Pass False for incremental
+            re-indexing of a single just-changed part -- a stale cached result
+            (old graph, or a 'not found' from before it existed) would otherwise
+            re-index the wrong content (issue #159).
 
     Returns: Formatted list of all parts from Virtuoso
     """
@@ -63,7 +67,7 @@ def query_parts(_from='', criteria='', indexing=False):
         OPTIONAL {{ ?subject sbol2:type ?sboltype . }}
     }}
     '''
-    return memoized_query_sparql(query)
+    return memoized_query_sparql(query) if use_cache else query_sparql(query)
 
 def query_parts_paged(_from='', criteria='', indexing=False, page_size=10000):
     """
