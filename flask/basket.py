@@ -100,6 +100,7 @@ def recommend(device_baskets, cart, min_count=DEFAULT_MIN_COUNT, top_k=DEFAULT_T
             0 if nothing did)
     """
     cart = frozenset(cart)
+    logger_.log(f'recommend(cart={sorted(cart)}, min_count={min_count}, top_k={top_k})')
     n = len(device_baskets)
     if n == 0 or not cart:
         return [], 0
