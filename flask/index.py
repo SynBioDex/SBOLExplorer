@@ -257,7 +257,12 @@ def refresh_index(subject, uri2rank):
     # the memoized query cache (which could hold a stale 'not found' or old graph).
     part_response = query.query_parts('', f'FILTER (?subject = <{subject}>)', True, use_cache=False)
 
-    if len(part_response) == 1:
+    # A part with multiple rdf:type / role / sbolType triples yields >1 row for the
+    # same subject (SELECT DISTINCT over ?type ?role ?sboltype), so the old `== 1`
+    # guard silently SKIPPED every multi-typed part -- it was never indexed. Index
+    # whenever the part exists; index_part upserts by subject, matching the
+    # full-reindex behavior (one doc per subject).
+    if part_response:
         add_pagerank(part_response, uri2rank)
         add_keywords(part_response)
         index_part(part_response[0])

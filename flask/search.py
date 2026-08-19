@@ -13,8 +13,15 @@ logger_ = Logger()
 wor_client_ = WORClient()
 
 # Compile regex patterns
-FROM_COUNT_PATTERN = re.compile(r'SELECT \(count\(distinct \?subject\) as \?tempcount\)\s*(.*)\s*WHERE {')
-FROM_NORMAL_PATTERN = re.compile(r'\?type\n(.*)\s*WHERE {')
+# Capture the FROM clause(s) that sit right before WHERE, regardless of where
+# they fall in the SELECT var list. The old patterns assumed FROM came directly
+# after '?type', but SynBioHub's search template puts $from after the full var
+# list (?type ?sbolType ?role), so FROM was never matched -> _from empty ->
+# fell back to default-graph-uri (public only) -> a logged-in user's private
+# graph was dropped and private parts were unsearchable.
+FROM_CLAUSE_PATTERN = re.compile(r'((?:FROM\s*<[^>]*>\s*)+)WHERE\s*{')
+FROM_COUNT_PATTERN = FROM_CLAUSE_PATTERN
+FROM_NORMAL_PATTERN = FROM_CLAUSE_PATTERN
 CRITERIA_PATTERN = re.compile(r'WHERE {\s*(.*)\s*\?subject a \?type \.')
 OFFSET_PATTERN = re.compile(r'OFFSET (\d+)')
 LIMIT_PATTERN = re.compile(r'LIMIT (\d+)')
@@ -238,7 +245,14 @@ def extract_allowed_graphs(_from: str, default_graph_uri: str) -> List[str]:
     Returns:
         List -- List of allowed graphs
     """
-    allowed_graphs = [default_graph_uri] if not _from else [graph.strip()[1:-1] for graph in _from.split('FROM') if graph.strip()[1:-1]]
+    if not _from:
+        # default_graph_uri can be None (no FROM clause and no default-graph-uri
+        # on the request). Drop it: {'term': {'graph': None}} makes ES 400 with
+        # "field name is null or empty". Empty allowed_graphs -> no results
+        # (create_bindings filters everything out), the safe non-leaking fallback.
+        allowed_graphs = [default_graph_uri] if default_graph_uri else []
+    else:
+        allowed_graphs = [graph.strip()[1:-1] for graph in _from.split('FROM') if graph.strip()[1:-1]]
     if config_manager.load_config()['distributed_search']:
         allowed_graphs.extend(instance['instanceUrl'] + '/public' for instance in wor_client_.get_wor_instance())
     return allowed_graphs
