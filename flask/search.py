@@ -276,7 +276,7 @@ def create_response(count: int, bindings: List[Dict], return_count: bool) -> Dic
     return {
         "head": {
             "link": [],
-            "vars": ["subject", "displayId", "version", "name", "description", "type", "percentMatch", "strandAlignment", "CIGAR"]
+            "vars": ["subject", "displayId", "version", "name", "description", "type", "role", "sbolType", "percentMatch", "strandAlignment", "CIGAR"]
         },
         "results": {"distinct": False, "ordered": True, "bindings": bindings}
     }
@@ -314,7 +314,7 @@ def create_binding(subject: str, displayId: Optional[str], version: Optional[int
         "description": description,
         "type": _type,
         "role": role,
-        "sboltype": sbol_type,
+        "sbolType": sbol_type,
         "order_by": order_by,
         "percentMatch": str(percentMatch) if percentMatch != -1 else None,
         "strandAlignment": strandAlignment if strandAlignment != 'N/A' else None,
@@ -322,8 +322,8 @@ def create_binding(subject: str, displayId: Optional[str], version: Optional[int
     }
     for key, value in attributes.items():
         if value is not None:
-            datatype = "http://www.w3.org/2001/XMLSchema#uri" if key in ["subject", "type", "role", "sboltype"] else "http://www.w3.org/2001/XMLSchema#string"
-            ltype = "uri" if key in ["subject", "type", "role", "sboltype"] else "literal"
+            datatype = "http://www.w3.org/2001/XMLSchema#uri" if key in ["subject", "type", "role", "sbolType"] else "http://www.w3.org/2001/XMLSchema#string"
+            ltype = "uri" if key in ["subject", "type", "role", "sbolType"] else "literal"
             binding[key] = {"type": ltype, "value": str(value), "datatype": datatype} if not key=="order_by" else order_by
     return binding
 
