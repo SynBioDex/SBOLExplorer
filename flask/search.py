@@ -496,10 +496,23 @@ def parse_allowed_graphs(allowed_graphs):
     Args:
         allowed_graphs: Allowed graphs
 
-    Returns: List of allowed graphs
+    Returns: String of a list of allowed graphs "From <graph1> From ..."
 
     """
     return ' '.join(f'FROM <{graph}>' for graph in allowed_graphs if graph)
+
+def split_graphs(allowed_graphs):
+    """
+    Split the allowed graphs into (public, private).
+
+    A private graph is a user graph -- its URI contains '/user/'. Everything else
+    (the instance public graph, and remote public graphs added by distributed
+    search) is treated as public. Used to route private results to Virtuoso and
+    public results to Elasticsearch / Virtuoso per issue #158.
+    """
+    public = [g for g in allowed_graphs if g and '/user/' not in g]
+    private = [g for g in allowed_graphs if g and '/user/' in g]
+    return public, private
 
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
     """
@@ -559,21 +572,43 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         return create_response(es_response['hits']['total'], bindings, is_count_query(sparql_query))
 
     else:
+        # ---- Issue #158 private/public routing ----
+        # Private results always come from Virtuoso (scoped to the user's private
+        # graphs). Public results come from Elasticsearch and/or Virtuoso depending
+        # on whether the query has a text part, a non-text part, or both. Private
+        # results are ranked above public.
+        public_graphs, private_graphs = split_graphs(allowed_graphs)
+
+        # PRIVATE -- Virtuoso, private graphs only, using the full criteria
+        # (structural + text CONTAINS). Rule 1.
+        private_bindings = []
+        if private_graphs:
+            private_response = query.query_parts(parse_allowed_graphs(private_graphs), criteria)
+            private_bindings = create_criteria_bindings(private_response, uri2rank)
+
+        # PUBLIC -- routed by query composition.
         if not filterless_criteria:
+            # Rule 3: text only -> public from Elasticsearch.
             es_response = search_es(es_query)
-            # pure string search
-            bindings = create_bindings(es_response, clusters, allowed_graphs)
+            public_bindings = create_bindings(es_response, clusters, public_graphs)
+        elif es_query == '':
+            # Rule 4: non-text only -> public all from Virtuoso.
+            public_response = query.query_parts(parse_allowed_graphs(public_graphs), filterless_criteria)
+            public_bindings = create_criteria_bindings(public_response, uri2rank)
         else:
-            # advanced search and string search
-            criteria_response = query.query_parts(_from, filterless_criteria)
-            allowed_subjects = get_allowed_subjects(criteria_response)
+            # Rule 5: text + non-text -> public from ES intersect Virtuoso.
+            public_response = query.query_parts(parse_allowed_graphs(public_graphs), filterless_criteria)
+            public_allowed = get_allowed_subjects(public_response)
+            es_response = search_es_allowed_subjects(es_query, public_allowed)
+            public_bindings = create_bindings(es_response, clusters, public_graphs, public_allowed)
 
-            es_allowed_subject = (search_es_allowed_subjects_empty_string(allowed_subjects)
-                                  if es_query == '' 
-                                  else search_es_allowed_subjects(es_query, allowed_subjects))
-
-            bindings = create_bindings(es_allowed_subject, clusters, allowed_graphs, allowed_subjects)
-            logger_.log('Advanced string search complete.')
+        # Rule 6 (+ note for rule 4): private ranked above public. Sort each group
+        # by its own order_by (pagerank for Virtuoso rows, weighted ES score for ES
+        # rows), then place all private results ahead of all public ones.
+        private_bindings.sort(key=lambda b: b['order_by'], reverse=True)
+        public_bindings.sort(key=lambda b: b['order_by'], reverse=True)
+        bindings = private_bindings + public_bindings
+        return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
     bindings.sort(key=lambda b: b['order_by'], reverse=True)
     return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
