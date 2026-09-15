@@ -78,13 +78,19 @@ def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
     """
     query = {'term': {'graph': allowed_graphs[0]}} if len(allowed_graphs) == 1 else {'terms': {'graph': allowed_graphs}}
 
+    # Rank private (user-graph) results above public, matching the SBOLExplorer-OFF
+    # (direct Virtuoso) behavior and issue #158. Private docs get a large additive
+    # boost so they always sort above public; pagerank still orders within each group.
+    private_graphs = [g for g in allowed_graphs if '/user/' in g]
+
     body = {
         'query': {
             'function_score': {
                 'query': query,
                 'script_score': {
                     'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"  # Math.log is a natural log
+                        'source': "(_score * Math.log(doc['pagerank'].value + 1)) + (params.privateGraphs.contains(doc['graph'].value) ? params.privateBoost : 0)",  # Math.log is a natural log; private graphs boosted above public
+                        'params': {'privateGraphs': private_graphs, 'privateBoost': 1000000.0}
                     }
                 }
             }
