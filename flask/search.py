@@ -78,13 +78,19 @@ def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
     """
     query = {'term': {'graph': allowed_graphs[0]}} if len(allowed_graphs) == 1 else {'terms': {'graph': allowed_graphs}}
 
+    # Rank private (user-graph) results above public, matching the SBOLExplorer-OFF
+    # (direct Virtuoso) behavior and issue #158. Private docs get a large additive
+    # boost so they always sort above public; pagerank still orders within each group.
+    private_graphs = [g for g in allowed_graphs if '/user/' in g]
+
     body = {
         'query': {
             'function_score': {
                 'query': query,
                 'script_score': {
                     'script': {
-                        'source': "_score * Math.log(doc['pagerank'].value + 1)"  # Math.log is a natural log
+                        'source': "(_score * Math.log(doc['pagerank'].value + 1)) + (params.privateGraphs.contains(doc['graph'].value) ? params.privateBoost : 0)",  # Math.log is a natural log; private graphs boosted above public
+                        'params': {'privateGraphs': private_graphs, 'privateBoost': 1000000.0}
                     }
                 }
             }
@@ -402,7 +408,23 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False,
         Dict -- Binding of parts
     """
     bindings = []
-    parts = (p for p in criteria_response if p.get('role') is None or 'http://wiki.synbiohub.org' in p.get('role'))
+
+    # query_parts returns one row per role/sbolType combination, so a part can
+    # come back several times. Keep one row per subject, preferring a Sequence
+    # Ontology role and a BioPAX type (the priority the Type column displays).
+    # The previous filter deduped by keeping only rows with no role or a
+    # wiki.synbiohub.org role, which dropped every part whose roles are all
+    # Sequence Ontology terms -- i.e. anything not imported from iGEM.
+    def preference(row):
+        return ((row.get('role') or '').startswith('http://identifiers.org/so/'),
+                (row.get('sboltype') or '').startswith('http://www.biopax.org/release/biopax-level3.owl#'))
+
+    best_by_subject = {}
+    for row in criteria_response:
+        subject = row.get('subject')
+        if subject not in best_by_subject or preference(row) > preference(best_by_subject[subject]):
+            best_by_subject[subject] = row
+    parts = best_by_subject.values()
     for part in parts:
         subject = part.get('subject')
         pagerank = uri2rank.get(subject, 1)
@@ -496,10 +518,52 @@ def parse_allowed_graphs(allowed_graphs):
     Args:
         allowed_graphs: Allowed graphs
 
-    Returns: List of allowed graphs
+    Returns: String of a list of allowed graphs "From <graph1> From ..."
 
     """
     return ' '.join(f'FROM <{graph}>' for graph in allowed_graphs if graph)
+
+def split_graphs(allowed_graphs):
+    """
+    Split the allowed graphs into (public, private).
+
+    A private graph is a user graph -- its URI contains '/user/'. Everything else
+    (the instance public graph, and remote public graphs added by distributed
+    search) is treated as public. Used to route private results to Virtuoso and
+    public results to Elasticsearch / Virtuoso per issue #158.
+    """
+    public = [g for g in allowed_graphs if g and '/user/' not in g]
+    private = [g for g in allowed_graphs if g and '/user/' in g]
+    return public, private
+
+def order_rule4_bindings(private_bindings, public_bindings, uri2rank):
+    """
+    Ordering for issue #158 "Note for rule 4" (non-text / structural-only search):
+
+        1. private items with no pagerank first,
+        2. then public items with no pagerank,
+        3. then all remaining (ranked) items -- private and public together --
+           sorted by pagerank.
+
+    An item has "no rank" when its subject is not a key in uri2rank, i.e. PageRank
+    was never computed for it (a brand-new part added incrementally, before the
+    next full reindex recomputes uri2rank over the whole graph). Such items are
+    surfaced at the very top so freshly-added parts are always findable even
+    though they don't yet have a meaningful rank.
+
+    NOTE: tier 3 mixes private and public purely by pagerank, so a highly-ranked
+    public part can sit above a lower-ranked private one. That is what this note
+    asks for and it can override rule 6's "private always above public" for the
+    ranked tail; the no-rank tiers still keep private ahead of public.
+    """
+    def has_rank(binding):
+        return binding['subject']['value'] in uri2rank
+
+    private_norank = [b for b in private_bindings if not has_rank(b)]
+    public_norank = [b for b in public_bindings if not has_rank(b)]
+    ranked = [b for b in (private_bindings + public_bindings) if has_rank(b)]
+    ranked.sort(key=lambda b: b['order_by'], reverse=True)
+    return private_norank + public_norank + ranked
 
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
     """
@@ -559,21 +623,49 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         return create_response(es_response['hits']['total'], bindings, is_count_query(sparql_query))
 
     else:
+        # ---- Issue #158 private/public routing ----
+        # Private results always come from Virtuoso (scoped to the user's private
+        # graphs). Public results come from Elasticsearch and/or Virtuoso depending
+        # on whether the query has a text part, a non-text part, or both. Private
+        # results are ranked above public.
+        public_graphs, private_graphs = split_graphs(allowed_graphs)
+
+        # PRIVATE -- Virtuoso, private graphs only, using the full criteria
+        # (structural + text CONTAINS). Rule 1.
+        private_bindings = []
+        if private_graphs:
+            private_response = query.query_parts(parse_allowed_graphs(private_graphs), criteria)
+            private_bindings = create_criteria_bindings(private_response, uri2rank)
+
+        # PUBLIC -- routed by query composition.
         if not filterless_criteria:
+            # Rule 3: text only -> public from Elasticsearch.
             es_response = search_es(es_query)
-            # pure string search
-            bindings = create_bindings(es_response, clusters, allowed_graphs)
+            public_bindings = create_bindings(es_response, clusters, public_graphs)
+        elif es_query == '':
+            # Rule 4: non-text only -> public all from Virtuoso.
+            public_response = query.query_parts(parse_allowed_graphs(public_graphs), filterless_criteria)
+            public_bindings = create_criteria_bindings(public_response, uri2rank)
         else:
-            # advanced search and string search
-            criteria_response = query.query_parts(_from, filterless_criteria)
-            allowed_subjects = get_allowed_subjects(criteria_response)
+            # Rule 5: text + non-text -> public from ES intersect Virtuoso.
+            public_response = query.query_parts(parse_allowed_graphs(public_graphs), filterless_criteria)
+            public_allowed = get_allowed_subjects(public_response)
+            es_response = search_es_allowed_subjects(es_query, public_allowed)
+            public_bindings = create_bindings(es_response, clusters, public_graphs, public_allowed)
 
-            es_allowed_subject = (search_es_allowed_subjects_empty_string(allowed_subjects)
-                                  if es_query == '' 
-                                  else search_es_allowed_subjects(es_query, allowed_subjects))
-
-            bindings = create_bindings(es_allowed_subject, clusters, allowed_graphs, allowed_subjects)
-            logger_.log('Advanced string search complete.')
+        # Final ordering:
+        #   Rule 4 (non-text only): "note for rule 4" -- private no-rank first,
+        #     public no-rank next, then remaining ranked items by pagerank.
+        #   Rules 3 / 5: rule 6 -- private ranked above public, each group sorted
+        #     by its own order_by (pagerank for Virtuoso rows, weighted ES score
+        #     for ES rows).
+        if es_query == '' and filterless_criteria:
+            bindings = order_rule4_bindings(private_bindings, public_bindings, uri2rank)
+        else:
+            private_bindings.sort(key=lambda b: b['order_by'], reverse=True)
+            public_bindings.sort(key=lambda b: b['order_by'], reverse=True)
+            bindings = private_bindings + public_bindings
+        return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
     bindings.sort(key=lambda b: b['order_by'], reverse=True)
     return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
