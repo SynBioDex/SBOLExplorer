@@ -408,7 +408,23 @@ def create_criteria_bindings(criteria_response, uri2rank, sequence_search=False,
         Dict -- Binding of parts
     """
     bindings = []
-    parts = (p for p in criteria_response if p.get('role') is None or 'http://wiki.synbiohub.org' in p.get('role'))
+
+    # query_parts returns one row per role/sbolType combination, so a part can
+    # come back several times. Keep one row per subject, preferring a Sequence
+    # Ontology role and a BioPAX type (the priority the Type column displays).
+    # The previous filter deduped by keeping only rows with no role or a
+    # wiki.synbiohub.org role, which dropped every part whose roles are all
+    # Sequence Ontology terms -- i.e. anything not imported from iGEM.
+    def preference(row):
+        return ((row.get('role') or '').startswith('http://identifiers.org/so/'),
+                (row.get('sboltype') or '').startswith('http://www.biopax.org/release/biopax-level3.owl#'))
+
+    best_by_subject = {}
+    for row in criteria_response:
+        subject = row.get('subject')
+        if subject not in best_by_subject or preference(row) > preference(best_by_subject[subject]):
+            best_by_subject[subject] = row
+    parts = best_by_subject.values()
     for part in parts:
         subject = part.get('subject')
         pagerank = uri2rank.get(subject, 1)
@@ -520,6 +536,35 @@ def split_graphs(allowed_graphs):
     private = [g for g in allowed_graphs if g and '/user/' in g]
     return public, private
 
+def order_rule4_bindings(private_bindings, public_bindings, uri2rank):
+    """
+    Ordering for issue #158 "Note for rule 4" (non-text / structural-only search):
+
+        1. private items with no pagerank first,
+        2. then public items with no pagerank,
+        3. then all remaining (ranked) items -- private and public together --
+           sorted by pagerank.
+
+    An item has "no rank" when its subject is not a key in uri2rank, i.e. PageRank
+    was never computed for it (a brand-new part added incrementally, before the
+    next full reindex recomputes uri2rank over the whole graph). Such items are
+    surfaced at the very top so freshly-added parts are always findable even
+    though they don't yet have a meaningful rank.
+
+    NOTE: tier 3 mixes private and public purely by pagerank, so a highly-ranked
+    public part can sit above a lower-ranked private one. That is what this note
+    asks for and it can override rule 6's "private always above public" for the
+    ranked tail; the no-rank tiers still keep private ahead of public.
+    """
+    def has_rank(binding):
+        return binding['subject']['value'] in uri2rank
+
+    private_norank = [b for b in private_bindings if not has_rank(b)]
+    public_norank = [b for b in public_bindings if not has_rank(b)]
+    ranked = [b for b in (private_bindings + public_bindings) if has_rank(b)]
+    ranked.sort(key=lambda b: b['order_by'], reverse=True)
+    return private_norank + public_norank + ranked
+
 def search(sparql_query, uri2rank, clusters, default_graph_uri):
     """
     Main search method.
@@ -608,12 +653,18 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
             es_response = search_es_allowed_subjects(es_query, public_allowed)
             public_bindings = create_bindings(es_response, clusters, public_graphs, public_allowed)
 
-        # Rule 6 (+ note for rule 4): private ranked above public. Sort each group
-        # by its own order_by (pagerank for Virtuoso rows, weighted ES score for ES
-        # rows), then place all private results ahead of all public ones.
-        private_bindings.sort(key=lambda b: b['order_by'], reverse=True)
-        public_bindings.sort(key=lambda b: b['order_by'], reverse=True)
-        bindings = private_bindings + public_bindings
+        # Final ordering:
+        #   Rule 4 (non-text only): "note for rule 4" -- private no-rank first,
+        #     public no-rank next, then remaining ranked items by pagerank.
+        #   Rules 3 / 5: rule 6 -- private ranked above public, each group sorted
+        #     by its own order_by (pagerank for Virtuoso rows, weighted ES score
+        #     for ES rows).
+        if es_query == '' and filterless_criteria:
+            bindings = order_rule4_bindings(private_bindings, public_bindings, uri2rank)
+        else:
+            private_bindings.sort(key=lambda b: b['order_by'], reverse=True)
+            public_bindings.sort(key=lambda b: b['order_by'], reverse=True)
+            bindings = private_bindings + public_bindings
         return create_response(len(bindings), bindings[offset:offset + limit], is_count_query(sparql_query))
 
     bindings.sort(key=lambda b: b['order_by'], reverse=True)
