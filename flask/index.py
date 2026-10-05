@@ -86,25 +86,24 @@ def create_parts_index(index_name):
         index_name {String} -- Name of the new index
     """
     es = elasticsearch_manager.get_es()
-    if es.indices.exists(index_name):
+    if es.indices.exists(index=index_name):
         logger_.log('Index already exists -> deleting', True)
         es.indices.delete(index=index_name)
 
     body = {
         'mappings': {
-            index_name: {
-                'properties': {
-                    'subject': {
-                        'type': 'keyword'
-                    },
-                    'graph': {
-                        'type': 'keyword'
-                    }
+            'properties': {
+                'subject': {
+                    'type': 'keyword'
                 },
-            }
+                'graph': {
+                    'type': 'keyword'
+                }
+            },
         },
         'settings': {
-            'number_of_shards': 1
+            'number_of_shards': 1,
+            'number_of_replicas': 0  # single-node: a replica can never be allocated, leaving the index yellow
         }
     }
     es.indices.create(index=index_name, body=body)
@@ -143,7 +142,6 @@ def index_page(es, parts_page, index_name, uri2rank, term_list):
                 continue
             yield {
                 '_index': index_name,
-                '_type': index_name,
                 '_id': part['subject'],
                 '_source': part
             }
@@ -239,14 +237,14 @@ def delete_subject(subject):
         },
         'conflicts': 'proceed'
     }
-    es.delete_by_query(index=index_name, doc_type=index_name, body=body)
+    es.delete_by_query(index=index_name, body=body)
 
 
 def index_part(part):
     delete_subject(part['subject'])
     index_name = config['elasticsearch_index_name']
     es = elasticsearch_manager.get_es()
-    es.index(index=index_name, doc_type=index_name, id=part['subject'], body=part)
+    es.index(index=index_name, id=part['subject'], body=part)
 
 
 def refresh_index(subject, uri2rank):

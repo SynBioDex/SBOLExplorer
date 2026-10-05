@@ -60,7 +60,7 @@ def search_es(es_query: str) -> Dict:
         'size': 10000
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body, rest_total_hits_as_int=True)
     except:
         logger_.log("search_es(es_query: str)")
         raise
@@ -96,10 +96,11 @@ def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
             }
         },
         'from': offset,
-        'size': limit
+        'size': limit,
+        'track_total_hits': True  # ES 7+ stops counting at 10,000 by default; the total is returned as the result count
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body, rest_total_hits_as_int=True)
     except:
         logger_.log("empty_search_es(offset: int, limit: int, allowed_graphs: List[str])")
         raise
@@ -149,7 +150,7 @@ def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Di
         'size': 10000
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body, rest_total_hits_as_int=True)
     except:
         logger_.log("search_es_allowed_subjects(es_query: str, allowed_subjects: List[str])")
         raise
@@ -184,7 +185,7 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
         'size': 10000
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body, rest_total_hits_as_int=True)
     except:
         logger_.log("search_es_allowed_subjects_empty_string")
         raise
