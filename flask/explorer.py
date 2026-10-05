@@ -10,6 +10,7 @@ import time
 import cluster
 import pagerank
 import index
+import facets
 import search
 import query
 from configManager import ConfigManager
@@ -210,6 +211,40 @@ def search_by_string():
         return response
     except Exception as e:
         log.error(f'Error during search by string: {e}')
+        raise
+
+@app.route('/facets', methods=['GET'])
+def facets_by_string():
+    """
+    Facet counts for a text search; see FACETS_API.md.
+
+    GET /facets?query=rbs&graph=<public>&graph=<user graph>&role=<uri>&facet_by=role,type
+    """
+    try:
+        es = elasticsearch_manager.get_es()
+        index_name = config_manager.load_config().get('elasticsearch_index_name')
+        if not es.indices.exists(index=index_name) or es.cat.indices(index=index_name, format='json')[0]['health'] == 'red':
+            abort(503, 'Elasticsearch is not working or the index does not exist.')
+
+        facet_by = [f.strip() for f in request.args.get('facet_by', ','.join(facets.DEFAULT_FACETS)).split(',') if f.strip()]
+        unknown = [f for f in facet_by if f not in facets.FACETS]
+        if unknown:
+            abort(400, f'Unknown facet(s): {", ".join(unknown)}. Valid: {", ".join(facets.FACETS)}')
+        try:
+            size = min(max(int(request.args.get('size', 50)), 1), facets.MAX_FACET_SIZE)
+        except ValueError:
+            abort(400, 'size must be an integer')
+
+        selected = {name: request.args.getlist(name) for name in facets.FACETS}
+        return jsonify(facets.facet_search(
+            request.args.get('query', '').strip(),
+            request.args.getlist('graph'),
+            selected,
+            facet_by,
+            size
+        ))
+    except Exception as e:
+        log.error(f'Error during facet search: {e}')
         raise
 
 # Initialize Explorer after all startup dependencies, including update_index,

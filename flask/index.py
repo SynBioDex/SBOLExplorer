@@ -1,6 +1,7 @@
 from elasticsearch import helpers
 from configManager import ConfigManager
 from elasticsearchManager import ElasticsearchManager
+import facets
 import query
 import json
 from logger import Logger
@@ -98,7 +99,8 @@ def create_parts_index(index_name):
                 },
                 'graph': {
                     'type': 'keyword'
-                }
+                },
+                **{facet['field']: {'type': 'keyword'} for facet in facets.FACETS.values()}
             },
         },
         'settings': {
@@ -154,6 +156,63 @@ def index_page(es, parts_page, index_name, uri2rank, term_list):
     if skipped:
         logger_.log(f'[WARN] skipped {len(skipped)} part(s) with subject URI > 512 bytes '
                     f'(ES _id limit); first: {skipped[0][:120]}', True)
+
+
+def index_facet_fields(es, index_name):
+    """
+    Fills the facet_* keyword-array fields of documents already in the index.
+
+    The main parts query returns one row per (role, type, ...) combination and
+    later rows overwrite earlier ones under the same _id, so the documents keep
+    only one role. Facets need every value, so each facet is streamed from
+    Virtuoso grouped by subject and written with partial updates. Parts not in
+    the index (e.g. skipped for an over-long URI) are ignored.
+    """
+    for name, facet in facets.FACETS.items():
+        def actions():
+            for subject, values in query.query_subject_values(facet['pattern']):
+                if len(subject.encode('utf-8')) > 512:  # ES _id limit, see index_page
+                    continue
+                yield {
+                    '_op_type': 'update',
+                    '_index': index_name,
+                    '_id': subject,
+                    'doc': {facet['field']: sorted(values)}
+                }
+
+        updated = missing = failed = 0
+        for ok, item in helpers.streaming_bulk(es, actions(), raise_on_error=False):
+            if ok:
+                updated += 1
+            elif item['update'].get('status') == 404:
+                missing += 1
+            else:
+                failed += 1
+                if failed <= 3:
+                    logger_.log(f'[ERROR] facet {name} update failed: {item}', True)
+        logger_.log(f'Facet {name}: updated {updated} parts '
+                    f'({missing} not in index, {failed} failed)', True)
+
+
+def add_facet_fields(parts):
+    """
+    Sets the facet_* fields on parts about to be indexed one by one
+    (incremental update / refresh), querying Virtuoso for just those subjects.
+    """
+    subjects = [part['subject'] for part in parts]
+    for facet in facets.FACETS.values():
+        values = query.query_values_for_subjects(facet['pattern'], subjects)
+        for part in parts:
+            part[facet['field']] = sorted(values.get(part['subject'], []))
+
+
+def add_facet_fields_safely(parts):
+    # An incremental update must not fail because facets could not be fetched;
+    # the part is still searchable and the next full /update fills its facets.
+    try:
+        add_facet_fields(parts)
+    except Exception as e:
+        logger_.log(f'[ERROR] Error while adding facet fields: {str(e)}', True)
 
 
 def load_term_list():
@@ -214,6 +273,14 @@ def update_index(uri2rank):
             create_parts_index(index_name)
 
     logger_.log(f'******** Finished adding {total} parts to index ********', True)
+
+    # Search works without facets, so a failure here is logged, not raised.
+    try:
+        logger_.log('******** Adding facet fields ********', True)
+        index_facet_fields(es, index_name)
+    except Exception as e:
+        logger_.log(f'[ERROR] Error while adding facet fields: {str(e)}', True)
+
     logger_.log('------------ Successfully updated index ------------\n', True)
 
 
@@ -254,6 +321,7 @@ def refresh_index(subject, uri2rank):
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)
         add_keywords(part_response)
+        add_facet_fields_safely(part_response)
         index_part(part_response[0])
 
 
@@ -269,6 +337,7 @@ def incremental_update(updates, uri2rank):
     add_keywords(parts_to_add)
     add_roles(parts_to_add, load_term_list())
     add_sbol_type(parts_to_add)
+    add_facet_fields_safely(parts_to_add)
 
     for part in parts_to_add:
         index_part(part)

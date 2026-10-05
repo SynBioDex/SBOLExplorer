@@ -26,6 +26,28 @@ def extract_offset(sparql_query):
     offset_match = OFFSET_PATTERN.search(sparql_query)
     return int(offset_match.group(1)) if offset_match else 0
 
+def text_query(es_query: str) -> Dict:
+    """
+    The free-text match shared by the string searches and /facets, so facet
+    counts are computed over exactly the documents a text search can return.
+    """
+    return {
+        'multi_match': {
+            'query': es_query,
+            'fields': [
+                'subject',
+                'displayId^3',  # caret indicates displayId is 3 times as important during search
+                'version',
+                'name',
+                'description',
+                'type',
+                'keywords'
+            ],
+            'operator': 'or',
+            'fuzziness': 'AUTO'
+        }
+    }
+
 def search_es(es_query: str) -> Dict:
     """
     String query for ES searches.
@@ -33,22 +55,7 @@ def search_es(es_query: str) -> Dict:
     body = {
         'query': {
             'function_score': {
-                'query': {
-                    'multi_match': {
-                        'query': es_query,
-                        'fields': [
-                            'subject',
-                            'displayId^3',  # caret indicates displayId is 3 times as important during search
-                            'version',
-                            'name',
-                            'description',
-                            'type',
-                            'keywords'
-                        ],
-                        'operator': 'or',
-                        'fuzziness': 'AUTO'
-                    }
-                },
+                'query': text_query(es_query),
                 'script_score': {
                     'script': {
                         'source': "_score * Math.log(doc['pagerank'].value + 1)"  # Math.log is a natural log
@@ -121,20 +128,7 @@ def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Di
                 'query': {
                     'bool': {
                         'must': [
-                            {'multi_match': {
-                                'query': es_query,
-                                'fields': [
-                                    'subject',
-                                    'displayId^3',
-                                    'version',
-                                    'name',
-                                    'description',
-                                    'type',
-                                    'keywords'
-                                ],
-                                'operator': 'or',
-                                'fuzziness': 'AUTO'
-                            }},
+                            text_query(es_query),
                             {'ids': {'values': list(allowed_subjects)}}
                         ]
                     }
