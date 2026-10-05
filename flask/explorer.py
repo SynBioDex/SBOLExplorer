@@ -172,7 +172,7 @@ def sparql_search_endpoint():
     try:
         es = elasticsearch_manager.get_es()
         index_name = config_manager.load_config().get('elasticsearch_index_name')
-        if not es.indices.exists(index=index_name) or es.cat.indices(format='json')[0]['health'] == 'red':
+        if not es.indices.exists(index=index_name) or es.cat.indices(index=index_name, format='json')[0]['health'] == 'red':
             abort(503, 'Elasticsearch is not working or the index does not exist.')
 
         sparql_query = request.args.get('query')
@@ -202,7 +202,7 @@ def search_by_string():
     try:
         es = elasticsearch_manager.get_es()
         index_name = config_manager.load_config().get('elasticsearch_index_name')
-        if not es.indices.exists(index=index_name) or es.cat.indices(format='json')[0]['health'] == 'red':
+        if not es.indices.exists(index=index_name) or es.cat.indices(index=index_name, format='json')[0]['health'] == 'red':
             abort(503, 'Elasticsearch is not working or the index does not exist.')
 
         query = request.args.get('query')
