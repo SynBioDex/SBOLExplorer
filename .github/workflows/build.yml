@@ -1,6 +1,11 @@
-name: Run release 
+name: Build snapshot
 
-on: push
+# Every push and pull request builds and tests the image, but only master
+# publishes it: the snapshot tags are what deployments pull, so a feature
+# branch must never overwrite them.
+on:
+  push:
+  pull_request:
 
 jobs:
 
@@ -15,10 +20,12 @@ jobs:
           docker build flask --file flask/docker/Dockerfile-source --build-arg EXPLORER_CONFIG=docker/config-synbiohub.json --tag myersresearchgroup/sbolexplorer:snapshot-synbiohub
           docker run --rm --entrypoint python myersresearchgroup/sbolexplorer:snapshot-synbiohub -m unittest discover -s tests
     - uses: azure/docker-login@v1
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
       with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
     - name: Push the image to Docker Hub
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
       run: |
           docker push myersresearchgroup/sbolexplorer:snapshot
           docker push myersresearchgroup/sbolexplorer:snapshot-synbiohub
