@@ -11,17 +11,20 @@ DEFAULT_TOP_K = 20
 
 def _pages_to_baskets(pages):
     """
-    Converts paged query_device_components() results into device_baskets and part_rols.
+    Converts paged query_device_components() results into device_baskets, part_roles,
+    and device_graphs.
 
     Args:
         pages: Iterable of pages (from query_device_components())
 
-    Returns: (device_baskets, part_roles)
+    Returns: (device_baskets, part_roles, device_graphs)
         device_baskets -- {device_uri: frozenset(part_uri)}, devices with < 2 parts excluded
         part_roles -- {part_uri: role_uri} for parts seen as sub-components
+        device_graphs -- {device_uri: frozenset(graph_uri)}, graphs each device was found in
     """
     device_baskets = defaultdict(set)
     part_roles = {}
+    device_graphs = defaultdict(set)
     for page in pages:
         for row in page:
             parent = row['parent']
@@ -30,7 +33,10 @@ def _pages_to_baskets(pages):
             role = row.get('childRole')
             if role and 'identifiers.org' in role:
                 part_roles[child] = role
-    return device_baskets, part_roles
+            graph = row.get('graph')
+            if graph:
+                device_graphs[parent].add(graph)
+    return device_baskets, part_roles, device_graphs
 
 
 def fetch_device_basket(subject):
@@ -40,15 +46,15 @@ def fetch_device_basket(subject):
     Args:
         subject: Device URI
 
-    Returns: (frozenset of part URIs, part_roles) if subject has >= 2 sub-parts, else (None, {})
+    Returns: (part URIs, part_roles, graph URIs) if subject has >= 2 sub-parts, else (None, {}, frozenset())
     """
-    device_baskets, part_roles = _pages_to_baskets(
+    device_baskets, part_roles, device_graphs = _pages_to_baskets(
         query.query_device_components(f'FILTER (?parent = <{subject}>)')
     )
     basket = device_baskets.get(subject, set())
     if len(basket) < 2:
-        return None, {}
-    return frozenset(basket), part_roles
+        return None, {}, frozenset()
+    return frozenset(basket), part_roles, frozenset(device_graphs.get(subject, set()))
 
 
 def update_baskets():
@@ -58,20 +64,22 @@ def update_baskets():
     request time (see recommend() below), so this only needs to refresh the
     raw composition data.
 
-    Returns: (device_baskets, part_roles)
+    Returns: (device_baskets, part_roles, device_graphs)
         device_baskets -- {device_uri: frozenset(part_uri)}, devices with < 2 parts excluded
         part_roles -- {part_uri: role_uri} for parts seen as sub-components
+        device_graphs -- {device_uri: frozenset(graph_uri)} for devices kept in device_baskets
     """
     logger_.log('------------ Updating baskets ------------', True)
     logger_.log('******** Query for device compositions ********', True)
 
-    device_baskets, part_roles = _pages_to_baskets(query.query_device_components())
+    device_baskets, part_roles, device_graphs = _pages_to_baskets(query.query_device_components())
     device_baskets = {k: frozenset(v) for k, v in device_baskets.items() if len(v) >= 2}
+    device_graphs = {k: frozenset(v) for k, v in device_graphs.items() if k in device_baskets}
 
     logger_.log(f'******** Query for device compositions complete: {len(device_baskets)} devices ********', True)
     logger_.log('------------ Successfully updated baskets ------------\n', True)
 
-    return device_baskets, part_roles
+    return device_baskets, part_roles, device_graphs
 
 
 def _item_counts(device_baskets):
@@ -82,13 +90,18 @@ def _item_counts(device_baskets):
     return counts
 
 
-def recommend(device_baskets, cart, min_count=DEFAULT_MIN_COUNT, top_k=DEFAULT_TOP_K):
+def recommend(device_baskets, cart, device_graphs=None, allowed_graphs=None,
+               min_count=DEFAULT_MIN_COUNT, top_k=DEFAULT_TOP_K):
     """
     Apriori-style recommendation for an arbitrary cart of selected parts.
 
     Args:
         device_baskets: {device_uri: frozenset(part_uri)}
         cart: Iterable of part URIs selected
+        device_graphs: {device_uri: frozenset(graph_uri)}, required if allowed_graphs is set
+        allowed_graphs: Graph URIs the caller may see; devices outside it are excluded before
+            any stats are computed. None = no restriction. External callers must pass this,
+            defaulting to [] (not None) so unknown callers get no recommendations, not all.
         min_count: Minimum number of devices a (sub)set must appear in before
             its statistics are trusted
         top_k: Max number of recommendations to return
@@ -101,6 +114,15 @@ def recommend(device_baskets, cart, min_count=DEFAULT_MIN_COUNT, top_k=DEFAULT_T
     """
     cart = frozenset(cart)
     logger_.log(f'recommend(cart={sorted(cart)}, min_count={min_count}, top_k={top_k})')
+
+    if allowed_graphs is not None:
+        allowed_graphs = set(allowed_graphs)
+        device_graphs = device_graphs or {}
+        device_baskets = {
+            device: basket for device, basket in device_baskets.items()
+            if device_graphs.get(device, frozenset()) & allowed_graphs
+        }
+
     n = len(device_baskets)
     if n == 0 or not cart:
         return [], 0
@@ -140,38 +162,42 @@ def recommend(device_baskets, cart, min_count=DEFAULT_MIN_COUNT, top_k=DEFAULT_T
     return [], 0
 
 
-def refresh_device_baskets(device_baskets, part_roles, subjects):
+def refresh_device_baskets(device_baskets, part_roles, device_graphs, subjects):
     """
-    Incrementally updates device_baskets/part_roles in place for a batch of
-    touched subjects: re-queries each subject's current sub-part composition
-    and overwrites (or removes) its entry.
+    Incrementally updates device_baskets/part_roles/device_graphs in place for a batch of
+    touched subjects.
 
     Args:
         device_baskets: Existing {device_uri: frozenset(part_uri)} to update in place
         part_roles: Existing {part_uri: role_uri} to update in place
+        device_graphs: Existing {device_uri: frozenset(graph_uri)} to update in place
         subjects: Iterable of subject URIs that were added/updated
 
-    Returns: (device_baskets, part_roles) -- same dicts, mutated
+    Returns: (device_baskets, part_roles, device_graphs) -- same dicts, mutated
     """
     for subject in subjects:
-        basket, roles = fetch_device_basket(subject)
+        basket, roles, graph = fetch_device_basket(subject)
         if basket is not None:
             device_baskets[subject] = basket
             part_roles.update(roles)
+            device_graphs[subject] = graph
         else:
             device_baskets.pop(subject, None)
-    return device_baskets, part_roles
+            device_graphs.pop(subject, None)
+    return device_baskets, part_roles, device_graphs
 
 
-def remove_device_basket(device_baskets, subject):
+def remove_device_basket(device_baskets, device_graphs, subject):
     """
     Removes a subject's basket entry (incremental delete).
 
     Args:
         device_baskets: Existing {device_uri: frozenset(part_uri)}
+        device_graphs: Existing {device_uri: frozenset(graph_uri)}
         subject: Device URI to remove
 
-    Returns: device_baskets (same dict, mutated)
+    Returns: (device_baskets, device_graphs) -- same dicts, mutated
     """
     device_baskets.pop(subject, None)
-    return device_baskets
+    device_graphs.pop(subject, None)
+    return device_baskets, device_graphs

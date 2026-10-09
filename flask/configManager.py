@@ -12,8 +12,8 @@ class ConfigManager:
     #   (the incident value 1 stopped pagerank after one iteration).
     # - uclust_identity: a fraction; vsearch --id fatally rejects anything > 1.0
     #   (the incident value 1.8 made clustering error out / reuse stale data).
-    # - basket_min_count:
-    # - basket_top_k:
+    # - basket_min_count: 0 would let single-device noise drive recommendations.
+    # - basket_top_k: unbounded would return the entire co-occurrence table.
     _NUMERIC_RANGES = {
         'pagerank_tolerance': (0.0, 0.1, '0.0001'),
         'uclust_identity': (0.0, 1.0, '0.8'),

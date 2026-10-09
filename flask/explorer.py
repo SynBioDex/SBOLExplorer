@@ -81,9 +81,10 @@ def update_index():
     uri2rank = pagerank.update_pagerank()
     data_manager.save_uri2rank(uri2rank)
 
-    device_baskets, part_roles = basket.update_baskets()
+    device_baskets, part_roles, device_graphs = basket.update_baskets()
     data_manager.save_device_baskets(device_baskets)
     data_manager.save_part_roles(part_roles)
+    data_manager.save_device_graphs(device_graphs)
 
     index.update_index(data_manager.get_uri2rank())
     
@@ -138,13 +139,15 @@ def incremental_update():
         index.incremental_update(updates, data_manager.get_uri2rank())
 
         subjects = [part['subject'] for part in updates.get('partsToAdd', [])]
-        device_baskets, part_roles = basket.refresh_device_baskets(
-            data_manager.get_device_baskets(), data_manager.get_part_roles(), subjects
+        device_baskets, part_roles, device_graphs = basket.refresh_device_baskets(
+            data_manager.get_device_baskets(), data_manager.get_part_roles(),
+            data_manager.get_device_graphs(), subjects
         )
         for subject in updates.get('partsToRemove', []):
-            device_baskets = basket.remove_device_basket(device_baskets, subject)
+            device_baskets, device_graphs = basket.remove_device_basket(device_baskets, device_graphs, subject)
         data_manager.save_device_baskets(device_baskets)
         data_manager.save_part_roles(part_roles)
+        data_manager.save_device_graphs(device_graphs)
 
         success_message = 'Successfully incrementally updated parts'
         logger_.log(success_message)
@@ -159,8 +162,11 @@ def incremental_remove():
         subject = request.args.get('subject')
         index.incremental_remove(subject)
 
-        device_baskets = basket.remove_device_basket(data_manager.get_device_baskets(), subject)
+        device_baskets, device_graphs = basket.remove_device_basket(
+            data_manager.get_device_baskets(), data_manager.get_device_graphs(), subject
+        )
         data_manager.save_device_baskets(device_baskets)
+        data_manager.save_device_graphs(device_graphs)
 
         success_message = f'Successfully incrementally removed: {subject}'
         logger_.log(success_message)
@@ -224,6 +230,9 @@ def recommend():
             return jsonify(error="Missing required 'subject' parameter"), 400
         cart = [s.strip() for s in subject.split(',') if s.strip()]
 
+        # Same param /sparqlSearch uses; missing/empty fails closed to no recommendations.
+        allowed_graphs = request.args.getlist('default-graph-uri')
+
         role = request.args.get('role')
         config = config_manager.load_config()
         limit = int(request.args.get('limit', float(config.get('basket_top_k', basket.DEFAULT_TOP_K))))
@@ -231,8 +240,9 @@ def recommend():
 
         # When filtering by role, don't truncate to `limit` until after filtering
         rules, matched_size = basket.recommend(
-            data_manager.get_device_baskets(), cart, min_count=min_count,
-            top_k=None if role else limit
+            data_manager.get_device_baskets(), cart,
+            device_graphs=data_manager.get_device_graphs(), allowed_graphs=allowed_graphs,
+            min_count=min_count, top_k=None if role else limit
         )
         if role:
             part_roles = data_manager.get_part_roles()

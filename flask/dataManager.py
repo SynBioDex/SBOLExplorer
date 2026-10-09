@@ -3,15 +3,18 @@ import os
 class DataManager:
     def __init__(self, clusters_filename='dumps/clusters_dump', uri2rank_filename='dumps/uri2rank_dump',
                  device_baskets_filename='dumps/device_baskets_dump',
-                 part_roles_filename='dumps/part_roles_dump'):
+                 part_roles_filename='dumps/part_roles_dump',
+                 device_graphs_filename='dumps/device_graphs_dump'):
         self.clusters_filename = clusters_filename
         self.uri2rank_filename = uri2rank_filename
         self.device_baskets_filename = device_baskets_filename
         self.part_roles_filename = part_roles_filename
+        self.device_graphs_filename = device_graphs_filename
         self._clusters = None
         self._uri2rank = None
         self._device_baskets = None
         self._part_roles = None
+        self._device_graphs = None
 
     def save_clusters(self, clusters):
         """
@@ -95,6 +98,28 @@ class DataManager:
         if self._part_roles is None:
             self._part_roles = self._deserialize(self.part_roles_filename)
         return self._part_roles
+
+    def save_device_graphs(self, device_graphs):
+        """
+        Saves the graph(s) each device lives in
+        Args:
+            device_graphs: {device_uri: frozenset(graph_uri)}
+
+        Returns:
+
+        """
+        self._device_graphs = device_graphs
+        self._serialize(self._device_graphs, self.device_graphs_filename)
+
+    def get_device_graphs(self):
+        """
+        Gets the device -> graph map
+        Returns:
+
+        """
+        if self._device_graphs is None:
+            self._device_graphs = self._deserialize(self.device_graphs_filename)
+        return self._device_graphs
 
     @staticmethod
     def _serialize(data, filename):

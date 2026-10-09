@@ -126,13 +126,15 @@ def query_device_components(criteria='', page_size=10000):
             to fetch a single device's current composition instead of all of them
         page_size: Rows per page
 
-    Returns: Generator yielding pages of {parent, childDef, childDisplayId, childRole} dicts
+    Returns: Generator yielding pages of {parent, childDef, childDisplayId, childRole, graph} dicts.
+        graph is the named graph ?parent lives in.
     """
     query_body = f'''
-    SELECT DISTINCT ?parent ?childDef ?childDisplayId ?childRole
+    SELECT DISTINCT ?parent ?childDef ?childDisplayId ?childRole ?graph
     WHERE {{
         {criteria}
         ?parent sbh:topLevel ?parent .
+        GRAPH ?graph {{ ?parent ?p ?o }} .
         ?parent sbol2:component ?comp .
         ?comp sbol2:definition ?childDef .
         OPTIONAL {{ ?childDef sbol2:displayId ?childDisplayId . }}
