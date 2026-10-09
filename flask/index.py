@@ -158,6 +158,14 @@ def index_page(es, parts_page, index_name, uri2rank, term_list):
                     f'(ES _id limit); first: {skipped[0][:120]}', True)
 
 
+def load_term_list():
+    """
+    Loads the SO-Ontologies term list that add_roles matches roles against.
+    """
+    with open('so-simplified.json', 'r') as so_json:
+        return json.load(so_json)
+
+
 def update_index(uri2rank):
     """
     Main method to update the index.
@@ -173,8 +181,7 @@ def update_index(uri2rank):
     logger_.log('------------ Updating index ------------', True)
 
     # Load the SO-Ontologies list once; reused for every page.
-    with open('so-simplified.json', 'r') as so_json:
-        term_list = json.load(so_json)
+    term_list = load_term_list()
 
     es = elasticsearch_manager.get_es()
 
@@ -258,8 +265,12 @@ def incremental_update(updates, uri2rank):
             delete_subject(subject)
 
     parts_to_add = updates['partsToAdd']
+    # Same enrichment as a full reindex (index_page), so an incrementally added
+    # part gets the SO-synonym and sbol-type keywords a reindexed part would have.
     add_pagerank(parts_to_add, uri2rank)
     add_keywords(parts_to_add)
+    add_roles(parts_to_add, load_term_list())
+    add_sbol_type(parts_to_add)
 
     for part in parts_to_add:
         index_part(part)
