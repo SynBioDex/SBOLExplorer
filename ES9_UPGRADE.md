@@ -18,14 +18,15 @@ start an empty ES 9 node and run `/update`.
 | File | Change |
 | --- | --- |
 | `flask/requirements.txt` | `elasticsearch>=9,<10`; removed the unused `elasticsearch-dsl`; `requests>=2.32`; dropped the 2018 pins of `certifi`, `chardet`, `idna`, `urllib3` (they conflicted with the new client) |
-| `flask/index.py` | Removed mapping types (ES 8+ rejects them): the `index_name:` level inside `mappings`, `_type` in bulk actions, and `doc_type=` in `delete_by_query` / `index`. `indices.exists` now uses a keyword argument (the 9.x client rejects positional args). `number_of_replicas: 0`, so a single-node index is green instead of yellow |
-| `flask/search.py` | All `search()` calls pass `rest_total_hits_as_int=True`, so `hits.total` stays an integer (ES 7+ returns an object). The search code and the JSON returned to SynBioHub are unchanged. `empty_search_es` sets `track_total_hits: True`, so counts above 10,000 stay exact |
+| `flask/index.py` | Removed mapping types (ES 8+ rejects them): the `index_name:` level inside `mappings`, `_type` in bulk actions, and `doc_type=` in `delete_by_query` / `index`. `indices.exists` now uses a keyword argument (the 9.x client rejects positional args). `number_of_replicas: 0`, so a single-node index is green instead of yellow. `max_terms_count: 1000000`, for the subject restriction in `search.py` (default is 65,536) |
+| `flask/search.py` | All `search()` calls pass `rest_total_hits_as_int=True`, so `hits.total` stays an integer (ES 7+ returns an object). The search code and the JSON returned to SynBioHub are unchanged. `empty_search_es` sets `track_total_hits: True`, so counts above 10,000 stay exact. Searches restricted to the parts Virtuoso allowed (text + filter) use a `terms` query on `subject` instead of an `ids` query (`subjects_query()`), see §4 |
 | `flask/explorer.py` | Health checks call `cat.indices(index=index_name)` instead of taking `[0]`. ES 9 creates hidden system indices, so `[0]` is not guaranteed to be `part` |
 | `flask/docker/docker-compose.yml` | ES image `9.5.3` + `discovery.type=single-node`, `xpack.security.enabled=false`, `ES_JAVA_OPTS=-Xms1g -Xmx1g` |
 
 Unchanged and still working on 9.x: `function_score` + Painless `script_score`
 (including the #158 private-graph boost), `multi_match` with
-`fuzziness: AUTO`, `ids` queries, and `from + size <= 10000`.
+`fuzziness: AUTO`, and `from + size <= 10000`. `ids` queries still work, but
+only up to 10,000 ids (see §4).
 
 ---
 
@@ -256,6 +257,15 @@ note at the top).
   analyzer were also updated, so near-tied results can swap order.
 - **System indices.** ES 9 creates hidden `.ds-*` indices. Code must address the
   `part` index by name, never by position.
+- **`ids` queries are capped at 10,000 ids.** ES 8+ rejects an `ids` query with
+  more ids than `max_result_window` (`Too many ids specified, allowed max result
+  window is [10000]`); ES 6.3 accepted any number. A text search combined with a
+  broad filter (e.g. the iGEM collection: 75,333 parts) hit this. Fixed by
+  restricting with a `terms` query on the keyword `subject` field, whose limit is
+  `index.max_terms_count` (set to 1,000,000 at index creation). Same constant
+  score per match, so ranking is unchanged. On an index created before this
+  change, raise it in place (a dynamic setting, no rebuild):
+  `curl -X PUT localhost:9200/part/_settings -H 'Content-Type: application/json' -d '{"index":{"max_terms_count":1000000}}'`
 - **License log line.** `license state changed, now [not valid]` in the ES logs
   comes from a paid-only feature. Ignore it; the `basic` license is `valid`.
 - **New capabilities** now available: `dense_vector` / kNN (with filters),

@@ -79,6 +79,11 @@ def add_sbol_type(parts_response):
             part['keywords'] += ' ' + type_
 
 
+# Upper bound on the subjects one filtered search may restrict to; above the
+# total number of top-level objects (~180k).
+MAX_TERMS_COUNT = 1000000
+
+
 def create_parts_index(index_name):
     """
     Creates a new index.
@@ -105,7 +110,10 @@ def create_parts_index(index_name):
         },
         'settings': {
             'number_of_shards': 1,
-            'number_of_replicas': 0  # single-node: a replica can never be allocated, leaving the index yellow
+            'number_of_replicas': 0,  # single-node: a replica can never be allocated, leaving the index yellow
+            # search.subjects_query sends every part a filter allows (a whole
+            # collection is 100k+); the default limit is 65,536 terms.
+            'max_terms_count': MAX_TERMS_COUNT
         }
     }
     es.indices.create(index=index_name, body=body)

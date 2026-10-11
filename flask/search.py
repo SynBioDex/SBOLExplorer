@@ -48,6 +48,19 @@ def text_query(es_query: str) -> Dict:
         }
     }
 
+def subjects_query(subjects: List[str]) -> Dict:
+    """
+    Restricts a search to the given subject URIs (the parts Virtuoso allowed).
+
+    Uses a terms query on the keyword 'subject' field (equal to the document
+    _id) rather than an ids query: since ES 8 an ids query is capped at
+    max_result_window (10,000) ids, and a broad filter such as a whole
+    collection allows far more parts. The terms limit is the index's
+    max_terms_count, raised in index.create_parts_index. Both give every
+    match the same constant score, so ranking is unchanged.
+    """
+    return {'terms': {'subject': list(subjects)}}
+
 def search_es(es_query: str) -> Dict:
     """
     String query for ES searches.
@@ -129,7 +142,7 @@ def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Di
                     'bool': {
                         'must': [
                             text_query(es_query),
-                            {'ids': {'values': list(allowed_subjects)}}
+                            subjects_query(allowed_subjects)
                         ]
                     }
                 },
@@ -164,7 +177,7 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
                 'query': {
                     'bool': {
                         'must': [
-                            {'ids': {'values': list(allowed_subjects)}}
+                            subjects_query(allowed_subjects)
                         ]
                     }
                 },
