@@ -1,6 +1,9 @@
+import threading
+
 from elasticsearch import helpers
 from configManager import ConfigManager
 from elasticsearchManager import ElasticsearchManager
+import facets
 import query
 import json
 from logger import Logger
@@ -78,6 +81,11 @@ def add_sbol_type(parts_response):
             part['keywords'] += ' ' + type_
 
 
+# Upper bound on the subjects one filtered search may restrict to; above the
+# total number of top-level objects (~180k).
+MAX_TERMS_COUNT = 1000000
+
+
 def create_parts_index(index_name):
     """
     Creates a new index.
@@ -86,25 +94,28 @@ def create_parts_index(index_name):
         index_name {String} -- Name of the new index
     """
     es = elasticsearch_manager.get_es()
-    if es.indices.exists(index_name):
+    if es.indices.exists(index=index_name):
         logger_.log('Index already exists -> deleting', True)
         es.indices.delete(index=index_name)
 
     body = {
         'mappings': {
-            index_name: {
-                'properties': {
-                    'subject': {
-                        'type': 'keyword'
-                    },
-                    'graph': {
-                        'type': 'keyword'
-                    }
+            'properties': {
+                'subject': {
+                    'type': 'keyword'
                 },
-            }
+                'graph': {
+                    'type': 'keyword'
+                },
+                **{facet['field']: {'type': 'keyword'} for facet in facets.FACETS.values()}
+            },
         },
         'settings': {
-            'number_of_shards': 1
+            'number_of_shards': 1,
+            'number_of_replicas': 0,  # single-node: a replica can never be allocated, leaving the index yellow
+            # search.subjects_query sends every part a filter allows (a whole
+            # collection is 100k+); the default limit is 65,536 terms.
+            'max_terms_count': MAX_TERMS_COUNT
         }
     }
     es.indices.create(index=index_name, body=body)
@@ -143,7 +154,6 @@ def index_page(es, parts_page, index_name, uri2rank, term_list):
                 continue
             yield {
                 '_index': index_name,
-                '_type': index_name,
                 '_id': part['subject'],
                 '_source': part
             }
@@ -156,6 +166,134 @@ def index_page(es, parts_page, index_name, uri2rank, term_list):
     if skipped:
         logger_.log(f'[WARN] skipped {len(skipped)} part(s) with subject URI > 512 bytes '
                     f'(ES _id limit); first: {skipped[0][:120]}', True)
+
+
+def index_facet_fields(es, index_name):
+    """
+    Fills the facet_* keyword-array fields of documents already in the index.
+
+    The main parts query returns one row per (role, type, ...) combination and
+    later rows overwrite earlier ones under the same _id, so the documents keep
+    only one role. Facets need every value, so each facet is streamed from
+    Virtuoso grouped by subject and written with partial updates. Parts not in
+    the index (e.g. skipped for an over-long URI) are ignored.
+    """
+    for name, facet in facets.FACETS.items():
+        def actions():
+            for subject, values in query.query_subject_values(facet['pattern']):
+                if len(subject.encode('utf-8')) > 512:  # ES _id limit, see index_page
+                    continue
+                yield {
+                    '_op_type': 'update',
+                    '_index': index_name,
+                    '_id': subject,
+                    'doc': {facet['field']: sorted(values)}
+                }
+
+        updated = missing = failed = 0
+        for ok, item in helpers.streaming_bulk(es, actions(), raise_on_error=False):
+            if ok:
+                updated += 1
+            elif item['update'].get('status') == 404:
+                missing += 1
+            else:
+                failed += 1
+                if failed <= 3:
+                    logger_.log(f'[ERROR] facet {name} update failed: {item}', True)
+        logger_.log(f'Facet {name}: updated {updated} parts '
+                    f'({missing} not in index, {failed} failed)', True)
+
+
+# Seconds after an incremental update at which the facet fields that only
+# Virtuoso knows (collections, creator) are fetched again; see
+# schedule_facet_refresh.
+FACET_REFRESH_DELAYS = (30, 120, 600)
+
+# Facets whose value SynBioHub already sends in the /incrementalupdate payload.
+PAYLOAD_FACETS = {'role': 'role', 'sboltype': 'sboltype', 'type': 'type'}
+
+
+def add_facet_fields_from_payload(parts):
+    """
+    Sets facet_role / facet_sboltype / facet_type from the fields SynBioHub
+    sends with each part, so they are right even before the part is in Virtuoso.
+    """
+    for part in parts:
+        for name, key in PAYLOAD_FACETS.items():
+            field = facets.FACETS[name]['field']
+            values = set(part.get(field) or [])
+            if part.get(key):
+                values.add(part[key])
+            part[field] = sorted(values)
+
+
+def add_facet_fields(parts):
+    """
+    Adds the facet values Virtuoso has for these parts to their facet_* fields
+    (incremental update / refresh), querying Virtuoso for just those subjects.
+    Existing values are kept, so values taken from the payload are not wiped
+    when Virtuoso does not have the part yet.
+    """
+    subjects = [part['subject'] for part in parts]
+    for facet in facets.FACETS.values():
+        values = query.query_values_for_subjects(facet['pattern'], subjects)
+        for part in parts:
+            field = facet['field']
+            part[field] = sorted(set(part.get(field) or []) | values.get(part['subject'], set()))
+
+
+def add_facet_fields_safely(parts):
+    # An incremental update must not fail because facets could not be fetched;
+    # the part is still searchable and the next full /update fills its facets.
+    try:
+        add_facet_fields(parts)
+    except Exception as e:
+        logger_.log(f'[ERROR] Error while adding facet fields: {str(e)}', True)
+
+
+def schedule_facet_refresh(subjects, delays=FACET_REFRESH_DELAYS):
+    """
+    Fetches the parts' facet values from Virtuoso again after delays[0] seconds.
+
+    SynBioHub sends /incrementalupdate while it prepares a submission, before
+    it uploads the submission to Virtuoso, so collections and creator (which
+    only Virtuoso has) are usually missing at that point. Each attempt keeps
+    the parts that still have no collection for the next delay.
+    """
+    if not subjects or not delays:
+        return
+    timer = threading.Timer(delays[0], refresh_facet_fields, args=(list(subjects), tuple(delays[1:])))
+    timer.daemon = True
+    timer.start()
+
+
+def refresh_facet_fields(subjects, remaining_delays=()):
+    """
+    Writes the facet values Virtuoso now has for these indexed parts (partial
+    updates), then reschedules the parts still without a collection.
+    """
+    collections_field = facets.FACETS['collections']['field']
+    try:
+        found = {subject: {} for subject in subjects}
+        for facet in facets.FACETS.values():
+            values = query.query_values_for_subjects(facet['pattern'], subjects)
+            for subject, subject_values in values.items():
+                found[subject][facet['field']] = sorted(subject_values)
+
+        # Virtuoso's values are complete once the part is uploaded (the same
+        # source a full /update uses); fields it has no value for are left as is.
+        actions = [
+            {'_op_type': 'update', '_index': config['elasticsearch_index_name'], '_id': subject, 'doc': fields}
+            for subject, fields in found.items() if fields
+        ]
+        if actions:
+            helpers.bulk(elasticsearch_manager.get_es(), actions, raise_on_error=False)
+        pending = [subject for subject, fields in found.items() if not fields.get(collections_field)]
+        logger_.log(f'Facet refresh: {len(subjects) - len(pending)} of {len(subjects)} parts complete', True)
+    except Exception as e:
+        logger_.log(f'[ERROR] Facet refresh failed: {str(e)}', True)
+        pending = subjects
+    schedule_facet_refresh(pending, remaining_delays)
 
 
 def load_term_list():
@@ -216,6 +354,14 @@ def update_index(uri2rank):
             create_parts_index(index_name)
 
     logger_.log(f'******** Finished adding {total} parts to index ********', True)
+
+    # Search works without facets, so a failure here is logged, not raised.
+    try:
+        logger_.log('******** Adding facet fields ********', True)
+        index_facet_fields(es, index_name)
+    except Exception as e:
+        logger_.log(f'[ERROR] Error while adding facet fields: {str(e)}', True)
+
     logger_.log('------------ Successfully updated index ------------\n', True)
 
 
@@ -239,14 +385,14 @@ def delete_subject(subject):
         },
         'conflicts': 'proceed'
     }
-    es.delete_by_query(index=index_name, doc_type=index_name, body=body)
+    es.delete_by_query(index=index_name, body=body)
 
 
 def index_part(part):
     delete_subject(part['subject'])
     index_name = config['elasticsearch_index_name']
     es = elasticsearch_manager.get_es()
-    es.index(index=index_name, doc_type=index_name, id=part['subject'], body=part)
+    es.index(index=index_name, id=part['subject'], body=part)
 
 
 def refresh_index(subject, uri2rank):
@@ -256,6 +402,7 @@ def refresh_index(subject, uri2rank):
     if len(part_response) == 1:
         add_pagerank(part_response, uri2rank)
         add_keywords(part_response)
+        add_facet_fields_safely(part_response)
         index_part(part_response[0])
 
 
@@ -271,9 +418,15 @@ def incremental_update(updates, uri2rank):
     add_keywords(parts_to_add)
     add_roles(parts_to_add, load_term_list())
     add_sbol_type(parts_to_add)
+    add_facet_fields_from_payload(parts_to_add)
+    add_facet_fields_safely(parts_to_add)
 
     for part in parts_to_add:
         index_part(part)
+
+    # Usually not in Virtuoso yet (see schedule_facet_refresh).
+    collections_field = facets.FACETS['collections']['field']
+    schedule_facet_refresh([part['subject'] for part in parts_to_add if not part.get(collections_field)])
 
 
 def incremental_remove(subject):

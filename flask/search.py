@@ -26,6 +26,41 @@ def extract_offset(sparql_query):
     offset_match = OFFSET_PATTERN.search(sparql_query)
     return int(offset_match.group(1)) if offset_match else 0
 
+def text_query(es_query: str) -> Dict:
+    """
+    The free-text match shared by the string searches and /facets, so facet
+    counts are computed over exactly the documents a text search can return.
+    """
+    return {
+        'multi_match': {
+            'query': es_query,
+            'fields': [
+                'subject',
+                'displayId^3',  # caret indicates displayId is 3 times as important during search
+                'version',
+                'name',
+                'description',
+                'type',
+                'keywords'
+            ],
+            'operator': 'or',
+            'fuzziness': 'AUTO'
+        }
+    }
+
+def subjects_query(subjects: List[str]) -> Dict:
+    """
+    Restricts a search to the given subject URIs (the parts Virtuoso allowed).
+
+    Uses a terms query on the keyword 'subject' field (equal to the document
+    _id) rather than an ids query: since ES 8 an ids query is capped at
+    max_result_window (10,000) ids, and a broad filter such as a whole
+    collection allows far more parts. The terms limit is the index's
+    max_terms_count, raised in index.create_parts_index. Both give every
+    match the same constant score, so ranking is unchanged.
+    """
+    return {'terms': {'subject': list(subjects)}}
+
 def search_es(es_query: str) -> Dict:
     """
     String query for ES searches.
@@ -33,22 +68,7 @@ def search_es(es_query: str) -> Dict:
     body = {
         'query': {
             'function_score': {
-                'query': {
-                    'multi_match': {
-                        'query': es_query,
-                        'fields': [
-                            'subject',
-                            'displayId^3',  # caret indicates displayId is 3 times as important during search
-                            'version',
-                            'name',
-                            'description',
-                            'type',
-                            'keywords'
-                        ],
-                        'operator': 'or',
-                        'fuzziness': 'AUTO'
-                    }
-                },
+                'query': text_query(es_query),
                 'script_score': {
                     'script': {
                         'source': "_score * Math.log(doc['pagerank'].value + 1)"  # Math.log is a natural log
@@ -60,7 +80,7 @@ def search_es(es_query: str) -> Dict:
         'size': 10000
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body, rest_total_hits_as_int=True)
     except:
         logger_.log("search_es(es_query: str)")
         raise
@@ -96,10 +116,11 @@ def empty_search_es(offset: int, limit: int, allowed_graphs: List[str]) -> Dict:
             }
         },
         'from': offset,
-        'size': limit
+        'size': limit,
+        'track_total_hits': True  # ES 7+ stops counting at 10,000 by default; the total is returned as the result count
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body, rest_total_hits_as_int=True)
     except:
         logger_.log("empty_search_es(offset: int, limit: int, allowed_graphs: List[str])")
         raise
@@ -120,21 +141,8 @@ def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Di
                 'query': {
                     'bool': {
                         'must': [
-                            {'multi_match': {
-                                'query': es_query,
-                                'fields': [
-                                    'subject',
-                                    'displayId^3',
-                                    'version',
-                                    'name',
-                                    'description',
-                                    'type',
-                                    'keywords'
-                                ],
-                                'operator': 'or',
-                                'fuzziness': 'AUTO'
-                            }},
-                            {'ids': {'values': list(allowed_subjects)}}
+                            text_query(es_query),
+                            subjects_query(allowed_subjects)
                         ]
                     }
                 },
@@ -149,7 +157,7 @@ def search_es_allowed_subjects(es_query: str, allowed_subjects: List[str]) -> Di
         'size': 10000
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body, rest_total_hits_as_int=True)
     except:
         logger_.log("search_es_allowed_subjects(es_query: str, allowed_subjects: List[str])")
         raise
@@ -169,7 +177,7 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
                 'query': {
                     'bool': {
                         'must': [
-                            {'ids': {'values': list(allowed_subjects)}}
+                            subjects_query(allowed_subjects)
                         ]
                     }
                 },
@@ -184,7 +192,7 @@ def search_es_allowed_subjects_empty_string(allowed_subjects: List[str]):
         'size': 10000
     }
     try:
-        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body)
+        return elasticsearch_manager.get_es().search(index=config_manager.load_config()['elasticsearch_index_name'], body=body, rest_total_hits_as_int=True)
     except:
         logger_.log("search_es_allowed_subjects_empty_string")
         raise
