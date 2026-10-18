@@ -174,13 +174,22 @@ def index_facet_fields(es, index_name):
 
     The main parts query returns one row per (role, type, ...) combination and
     later rows overwrite earlier ones under the same _id, so the documents keep
-    only one role. Facets need every value, so each facet is streamed from
-    Virtuoso grouped by subject and written with partial updates. Parts not in
-    the index (e.g. skipped for an over-long URI) are ignored.
+    only one role. Facets need every value, so each facet is read from
+    Virtuoso in unsorted pages (query.query_value_pages), merged in memory into
+    {subject: values}, and written with one partial update per part. Holding one
+    facet at a time costs a few hundred MB for ~1M parts; sorting in Virtuoso to
+    stream instead took hours, and appending per page with an update script made
+    every ES write several times slower. Parts not in the index (e.g. skipped
+    for an over-long URI) are ignored.
     """
     for name, facet in facets.FACETS.items():
+        values_by_subject = {}
+        for page in query.query_value_pages(facet['pattern']):
+            for row in page:
+                values_by_subject.setdefault(row['subject'], set()).add(row['value'])
+
         def actions():
-            for subject, values in query.query_subject_values(facet['pattern']):
+            for subject, values in values_by_subject.items():
                 if len(subject.encode('utf-8')) > 512:  # ES _id limit, see index_page
                     continue
                 yield {
@@ -200,6 +209,7 @@ def index_facet_fields(es, index_name):
                 failed += 1
                 if failed <= 3:
                     logger_.log(f'[ERROR] facet {name} update failed: {item}', True)
+        del values_by_subject
         logger_.log(f'Facet {name}: updated {updated} parts '
                     f'({missing} not in index, {failed} failed)', True)
 
