@@ -38,7 +38,12 @@ FACETS = {
 }
 
 DEFAULT_FACETS = list(FACETS)
-MAX_FACET_SIZE = 500
+# Facets list every value, like the SPARQL facet queries they replace: a
+# private collection's creator is on that one collection only (SynBioHub puts
+# dc:creator on the submission collection, not its parts), so a top-N cut-off
+# hides it. Five facets x 10,000 stays below Elasticsearch's search.max_buckets
+# (65,536 per search).
+MAX_FACET_SIZE = 10000
 
 SO_TERM_PATTERN = re.compile(r'SO[:_](\d{7})')
 
