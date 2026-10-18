@@ -64,13 +64,42 @@ def startup():
         es = elasticsearch_manager.get_es()
         index_name = config_manager.load_config().get('elasticsearch_index_name')
         if not es.indices.exists(index=index_name):
-            logger_.log('Index not found, creating new index.')
-            update_index()
+            logger_.log('Index not found, creating new index in the background.')
+            # A full build takes an hour or more. Building it here, at import,
+            # kept Flask from listening until it finished, so the container
+            # healthcheck failed and autoheal restarted Explorer mid-build,
+            # forever. Serve right away (/info answers; searches return 503
+            # until the index exists) and build in the background.
+            threading.Thread(target=startup_index, daemon=True).start()
     except Exception as e:
         log.error(f'Error during startup: {e}')
         raise
-    
+
+def startup_index():
+    try:
+        update_index()
+    except Exception as e:
+        log.error(f'Error while building the index at startup: {e}')
+        logger_.log(f'[ERROR] Index build at startup failed: {e}', True)
+
+# Only one full rebuild at a time: a second one would delete the index the
+# first is writing (startup build, /update, and the auto-update thread).
+indexing_lock = threading.Lock()
+
 def update_index():
+    """
+    Full rebuild. Returns False without doing anything if one is already running.
+    """
+    if not indexing_lock.acquire(blocking=False):
+        logger_.log('Index update requested while one is running; skipped', True)
+        return False
+    try:
+        _update_index()
+    finally:
+        indexing_lock.release()
+    return True
+
+def _update_index():
     logger_.log('============ STARTING INDEXING ============\n\n', True)
     config_manager.save_update_start_time()
 
@@ -120,7 +149,8 @@ def update():
             index.refresh_index(subject, data_manager.get_uri2rank())
             success_message = f'Successfully refreshed: {subject}'
         else:
-            update_index()
+            if not update_index():
+                return 'An index update is already running', 409
             success_message = 'Successfully updated entire index'
         return success_message
     except Exception as e:
