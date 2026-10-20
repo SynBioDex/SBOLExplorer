@@ -91,5 +91,15 @@ class IndexEmbeddingsTests(unittest.TestCase):
             self.assertEqual([a['doc'] for a in sent2], [a['doc'] for a in sent])
 
 
+class EmbedOrderTests(unittest.TestCase):
+    def test_vectors_come_back_in_input_order_although_embedded_by_length(self):
+        fake_model = mock.Mock()
+        fake_model.embed.side_effect = lambda texts, batch_size: [np.full(2, len(t), dtype=np.float32) for t in texts]
+        with mock.patch('embedding.model', return_value=fake_model):
+            out = embedding.embed(['ccc', 'a', 'bb'])
+        self.assertEqual(fake_model.embed.call_args.args[0], ['a', 'bb', 'ccc'])   # sorted by length
+        self.assertEqual([int(v[0]) for v in out], [3, 1, 2])                        # original order
+
+
 if __name__ == '__main__':
     unittest.main()

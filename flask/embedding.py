@@ -40,7 +40,14 @@ SOURCE_FIELDS = ['displayId', 'name', 'description', 'facet_role']
 MODEL_CACHE_DIR = 'dumps/models'
 CACHE_PATH = 'dumps/embeddings.sqlite'
 
-BATCH_SIZE = 256
+# Parts read from the index per round. Each round is sorted by text length
+# before embedding (see embed), so a larger round gives more even batches.
+BATCH_SIZE = 2048
+
+# Texts per model call. The tokenizer pads every text in a call to the
+# longest one, so short and long texts are kept apart (see embed); with
+# similar lengths, 32 was faster than 64 and used ~10x less extra memory.
+MODEL_BATCH_SIZE = 32
 
 
 def part_text(source):
@@ -70,8 +77,20 @@ def model():
 
 
 def embed(texts):
-    """Embeds documents; returns float32 numpy vectors, in order."""
-    return list(model().embed(texts, batch_size=64))
+    """
+    Embeds documents; returns float32 numpy vectors in the order given.
+
+    Part texts are short (median ~22 tokens) but a few are long (up to ~210),
+    and each model call pads all its texts to the longest. Embedding in order
+    of length keeps batches even: locally ~1.6x faster and far less memory
+    than the scan order, with identical vectors (padding is masked out).
+    """
+    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+    vectors = list(model().embed([texts[i] for i in order], batch_size=MODEL_BATCH_SIZE))
+    result = [None] * len(texts)
+    for position, i in enumerate(order):
+        result[i] = vectors[position]
+    return result
 
 
 class EmbeddingCache:
