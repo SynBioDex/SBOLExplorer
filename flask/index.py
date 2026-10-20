@@ -322,18 +322,7 @@ def index_embeddings(es, index_name):
 
     def vectors_for(hits):
         texts = {hit['_id']: embedding.part_text(hit['_source']) for hit in hits}
-        keys = {subject: embedding.EmbeddingCache.key(text) for subject, text in texts.items() if text}
-        stats['no_text'] += len(texts) - len(keys)
-        found = cache.get_many(set(keys.values()))
-        missing = sorted({key for key in keys.values() if key not in found})
-        if missing:
-            text_by_key = {keys[s]: texts[s] for s in keys}
-            computed = embedding.embed([text_by_key[key] for key in missing])
-            cache.put_many(zip(missing, computed))
-            found.update(zip(missing, computed))
-        stats['computed'] += len(missing)
-        stats['cached'] += len(keys) - len(missing)
-        return {subject: found[key] for subject, key in keys.items()}
+        return embedding.vectors_for_texts(texts, cache, stats)
 
     def actions():
         batch = []
@@ -370,6 +359,39 @@ def index_embeddings(es, index_name):
     logger_.log(f'Embeddings: updated {updated} parts ({stats["computed"]} computed, '
                 f'{stats["cached"]} from cache, {stats["no_text"]} without text, {failed} failed) '
                 f'in {time.monotonic() - started:.0f}s', True)
+
+
+def add_embeddings(parts):
+    """
+    Sets the embedding of parts about to be indexed one by one (incremental
+    update / refresh), with the same text, cache and model as a full build.
+    """
+    def embeddable(part):
+        types = set(part.get(facets.FACETS['type']['field']) or []) | {part.get('type')}
+        return not types & set(embedding.SKIPPED_TYPES)
+
+    texts = {part['subject']: embedding.part_text(part) for part in parts if embeddable(part)}
+    if not texts:
+        return
+    cache = embedding.EmbeddingCache()
+    try:
+        vectors = embedding.vectors_for_texts(texts, cache)
+    finally:
+        cache.close()
+    for part in parts:
+        if part['subject'] in vectors:
+            part[embedding.FIELD] = vectors[part['subject']].tolist()
+
+
+def add_embeddings_safely(parts):
+    # Only with vector search on; a failure leaves the part searchable by
+    # text, and the next full /update embeds it.
+    if not vector_search_enabled():
+        return
+    try:
+        add_embeddings(parts)
+    except Exception as e:
+        logger_.log(f'[ERROR] Error while adding embeddings: {str(e)}', True)
 
 
 def vector_search_enabled():
@@ -494,6 +516,7 @@ def refresh_index(subject, uri2rank):
         add_pagerank(part_response, uri2rank)
         add_keywords(part_response)
         add_facet_fields_safely(part_response)
+        add_embeddings_safely(part_response)
         index_part(part_response[0])
 
 
@@ -511,6 +534,7 @@ def incremental_update(updates, uri2rank):
     add_sbol_type(parts_to_add)
     add_facet_fields_from_payload(parts_to_add)
     add_facet_fields_safely(parts_to_add)
+    add_embeddings_safely(parts_to_add)
 
     for part in parts_to_add:
         index_part(part)
