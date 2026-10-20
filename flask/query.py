@@ -113,55 +113,36 @@ def query_parts_paged(_from='', criteria='', indexing=False, page_size=10000):
             break
         offset += page_size
 
-def _sparql_string(value):
-    """Escapes a value for use inside a SPARQL "..." string literal."""
-    return value.replace('\\', '\\\\').replace('"', '\\"')
-
-def query_subject_values(pattern, page_size=10000):
+def query_value_pages(pattern, page_size=10000):
     """
-    Streams (subject, values) for every top-level subject that matches
-    `pattern`, which binds ?subject and ?value (e.g. '?subject sbol2:role ?value .').
-    Each subject is yielded once with ALL of its values, so multi-valued
-    properties (several roles, several collections) are not truncated.
+    Streams every (subject, value) pair of a top-level subject matching
+    `pattern` (which binds ?subject and ?value, e.g. '?subject sbol2:role ?value .'),
+    one page (list of {'subject', 'value'} rows) at a time.
 
-    Pages by keyset on (subject, value) rather than OFFSET: Virtuoso refuses
-    ORDER BY + OFFSET once more than 10,000 rows would have to be sorted. Rows
-    arrive sorted by subject, so a subject's values may span pages; its group is
-    only yielded once a different subject (or the end) is reached.
+    Pages by plain OFFSET, unsorted, like query_parts_paged. Keyset paging with
+    ORDER BY made Virtuoso filter and sort the remaining rows on every page,
+    which grows roughly quadratically: on production (~1M top-level objects)
+    the facet pass took hours. A subject's values may therefore be split across
+    pages; index.index_facet_fields merges them per subject.
     """
     endpoint = config['sparql_endpoint']
-    last = None                  # (subject, value) of the previous page's last row
-    current, values = None, set()
+    offset = 0
     while True:
-        keyset = ''
-        if last is not None:
-            s, v = (_sparql_string(x) for x in last)
-            keyset = (f'FILTER(STR(?subject) > "{s}" || '
-                      f'(STR(?subject) = "{s}" && STR(?value) > "{v}"))')
-        page_query_ = f'''{QUERY_PREFIX}
+        page = send_query(f'''{QUERY_PREFIX}
         SELECT DISTINCT ?subject ?value WHERE {{
             ?subject sbh:topLevel ?subject .
             {pattern}
-            {keyset}
-        }} ORDER BY STR(?subject) STR(?value) LIMIT {page_size}'''
-        rows = send_query(page_query_, endpoint)
-
-        for row in rows:
-            if row['subject'] != current:
-                if current is not None:
-                    yield current, values
-                current, values = row['subject'], set()
-            values.add(row['value'])
-
-        if len(rows) < page_size:
-            if current is not None:
-                yield current, values
+        }} OFFSET {offset} LIMIT {page_size}''', endpoint)
+        if not page:
             return
-        last = (rows[-1]['subject'], rows[-1]['value'])
+        yield page
+        if len(page) < page_size:
+            return
+        offset += page_size
 
 def query_values_for_subjects(pattern, subjects, chunk_size=50):
     """
-    Like query_subject_values, but only for the given subjects (incremental
+    The facet values of only the given subjects (incremental
     indexing). Returns {subject: set(values)}; subjects without values are absent.
     """
     endpoint = config['sparql_endpoint']

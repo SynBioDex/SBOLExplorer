@@ -7,52 +7,53 @@ import query
 
 
 def fake_virtuoso(pairs):
-    """
-    Serves keyset-paged queries from an in-memory list of (subject, value)
-    pairs, honouring the (subject, value) keyset FILTER and LIMIT like Virtuoso.
-    """
-    rows = sorted(set(pairs))
+    """Serves OFFSET/LIMIT-paged queries from an in-memory list of (subject, value) pairs."""
+    rows = list(pairs)
 
     def send_query(sparql, endpoint):
         limit = int(re.search(r'LIMIT (\d+)', sparql).group(1))
-        keyset = re.search(r'STR\(\?subject\) > "([^"]*)".*STR\(\?value\) > "([^"]*)"', sparql)
-        selected = [r for r in rows if r > keyset.groups()] if keyset else rows
-        return [{'subject': s, 'value': v} for s, v in selected[:limit]]
+        offset = int(re.search(r'OFFSET (\d+)', sparql).group(1))
+        return [{'subject': s, 'value': v} for s, v in rows[offset:offset + limit]]
     return send_query
 
 
-class QuerySubjectValuesTests(unittest.TestCase):
-    def collect(self, pairs, page_size):
+class QueryValuePagesTests(unittest.TestCase):
+    def pages(self, pairs, page_size):
         with mock.patch('query.send_query', side_effect=fake_virtuoso(pairs)):
-            result = list(query.query_subject_values('?subject sbol2:role ?value .', page_size=page_size))
-        subjects = [s for s, _ in result]
-        self.assertEqual(len(subjects), len(set(subjects)), 'a subject was yielded twice')
-        return dict(result)
+            return list(query.query_value_pages('?subject sbol2:role ?value .', page_size=page_size))
 
-    def expected(self, pairs):
-        grouped = {}
-        for s, v in pairs:
-            grouped.setdefault(s, set()).add(v)
-        return grouped
-
-    def test_values_split_across_page_boundary_are_merged(self):
-        pairs = [('a', 'r1'), ('b', 'r1'), ('b', 'r2'), ('b', 'r3'), ('c', 'r1'), ('d', 'r1'), ('d', 'r2')]
-        for page_size in (2, 3, 4, 5, 100):
+    def test_every_pair_is_returned_once(self):
+        pairs = [('b', 'r2'), ('a', 'r1'), ('b', 'r1'), ('c', 'r1'), ('b', 'r3')]  # unsorted, like Virtuoso
+        for page_size in (1, 2, 3, 5, 100):
             with self.subTest(page_size=page_size):
-                self.assertEqual(self.collect(pairs, page_size), self.expected(pairs))
+                rows = [(r['subject'], r['value']) for page in self.pages(pairs, page_size) for r in page]
+                self.assertEqual(rows, pairs)
 
-    def test_subject_with_more_values_than_a_page(self):
-        pairs = [('a', 'r1')] + [('b', f'r{i}') for i in range(7)] + [('c', 'r1')]
-        for page_size in (2, 3):
-            with self.subTest(page_size=page_size):
-                self.assertEqual(self.collect(pairs, page_size), self.expected(pairs))
+    def test_page_size_exact_multiple_and_empty(self):
+        self.assertEqual(len(self.pages([('a', 'r1'), ('b', 'r1')], page_size=1)), 2)
+        self.assertEqual(self.pages([], page_size=3), [])
 
-    def test_page_size_exact_multiple(self):
-        pairs = [('a', 'r1'), ('b', 'r1'), ('c', 'r1'), ('d', 'r1')]
-        self.assertEqual(self.collect(pairs, page_size=2), self.expected(pairs))
 
-    def test_empty(self):
-        self.assertEqual(self.collect([], page_size=3), {})
+class IndexFacetFieldsTests(unittest.TestCase):
+    def test_values_split_across_pages_are_merged_into_one_update(self):
+        import index
+        pages = [[{'subject': 'a', 'value': 'r1'}, {'subject': 'b', 'value': 'r1'}, {'subject': 'a', 'value': 'r2'}],
+                 [{'subject': 'b', 'value': 'r2'}, {'subject': 'x' * 600, 'value': 'r1'}, {'subject': 'a', 'value': 'r1'}]]
+        sent = []
+
+        def streaming_bulk(es, actions, raise_on_error):
+            for action in actions:
+                sent.append(action)
+                yield True, {'update': {}}
+
+        with mock.patch.object(facets, 'FACETS', {'role': facets.FACETS['role']}), \
+                mock.patch('index.query.query_value_pages', return_value=iter(pages)), \
+                mock.patch('index.helpers.streaming_bulk', side_effect=streaming_bulk):
+            index.index_facet_fields(mock.Mock(), 'part')
+
+        # one plain partial update per part with all its values; over-long _id skipped
+        self.assertEqual([(a['_id'], a['doc']) for a in sent],
+                         [('a', {'facet_role': ['r1', 'r2']}), ('b', {'facet_role': ['r1', 'r2']})])
 
 
 class FacetQueryTests(unittest.TestCase):
