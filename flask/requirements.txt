@@ -6,6 +6,7 @@ itsdangerous==2.2.0
 Jinja2==3.1.4
 MarkupSafe==2.1.5
 numpy==2.1.1
+fastembed==0.9.0
 requests>=2.32
 six==1.11.0
 Werkzeug==3.0.4

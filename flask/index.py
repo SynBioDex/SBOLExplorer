@@ -1,4 +1,5 @@
 import threading
+import time
 
 from elasticsearch import helpers
 from configManager import ConfigManager
@@ -308,6 +309,75 @@ def refresh_facet_fields(subjects, remaining_delays=()):
     schedule_facet_refresh(pending, remaining_delays)
 
 
+def index_embeddings(es, index_name):
+    """
+    Writes the embedding of every non-Sequence part already in the index
+    (partial updates). Vectors come from the on-disk cache when the part's
+    text is unchanged since an earlier build; only new or changed text is
+    embedded (~150 parts/s locally with all-MiniLM-L6-v2).
+    """
+    cache = embedding.EmbeddingCache()
+    stats = {'cached': 0, 'computed': 0, 'no_text': 0}
+    started = time.monotonic()
+
+    def vectors_for(hits):
+        texts = {hit['_id']: embedding.part_text(hit['_source']) for hit in hits}
+        keys = {subject: embedding.EmbeddingCache.key(text) for subject, text in texts.items() if text}
+        stats['no_text'] += len(texts) - len(keys)
+        found = cache.get_many(set(keys.values()))
+        missing = sorted({key for key in keys.values() if key not in found})
+        if missing:
+            text_by_key = {keys[s]: texts[s] for s in keys}
+            computed = embedding.embed([text_by_key[key] for key in missing])
+            cache.put_many(zip(missing, computed))
+            found.update(zip(missing, computed))
+        stats['computed'] += len(missing)
+        stats['cached'] += len(keys) - len(missing)
+        return {subject: found[key] for subject, key in keys.items()}
+
+    def actions():
+        batch = []
+        hits = helpers.scan(es, index=index_name, _source=embedding.SOURCE_FIELDS, size=1000,
+                            query={'query': {'bool': {'must_not': {'terms': {'facet_type': embedding.SKIPPED_TYPES}}}}})
+        for hit in hits:
+            batch.append(hit)
+            if len(batch) == embedding.BATCH_SIZE:
+                yield from update_actions(vectors_for(batch))
+                batch = []
+                done = stats['cached'] + stats['computed']
+                if done % 10240 < embedding.BATCH_SIZE:
+                    logger_.log(f'Embeddings: {done} parts ({stats["computed"]} computed, '
+                                f'{stats["cached"]} from cache) in {time.monotonic() - started:.0f}s', True)
+        if batch:
+            yield from update_actions(vectors_for(batch))
+
+    def update_actions(vectors):
+        for subject, vector in vectors.items():
+            yield {'_op_type': 'update', '_index': index_name, '_id': subject,
+                   'doc': {embedding.FIELD: vector.tolist()}}
+
+    updated = failed = 0
+    try:
+        for ok, item in helpers.streaming_bulk(es, actions(), raise_on_error=False):
+            if ok:
+                updated += 1
+            else:
+                failed += 1
+                if failed <= 3:
+                    logger_.log(f'[ERROR] embedding update failed: {item}', True)
+    finally:
+        cache.close()
+    logger_.log(f'Embeddings: updated {updated} parts ({stats["computed"]} computed, '
+                f'{stats["cached"]} from cache, {stats["no_text"]} without text, {failed} failed) '
+                f'in {time.monotonic() - started:.0f}s', True)
+
+
+def vector_search_enabled():
+    # Re-read so a /config change made at runtime is honoured.
+    config_manager._config = None
+    return bool(config_manager.load_config().get('vector_search', False))
+
+
 def load_term_list():
     """
     Loads the SO-Ontologies term list that add_roles matches roles against.
@@ -373,6 +443,15 @@ def update_index(uri2rank):
         index_facet_fields(es, index_name)
     except Exception as e:
         logger_.log(f'[ERROR] Error while adding facet fields: {str(e)}', True)
+
+    # Off unless config sets vector_search: the first build embeds every part
+    # (about an hour for production); later builds reuse the cache.
+    if vector_search_enabled():
+        try:
+            logger_.log('******** Adding embeddings ********', True)
+            index_embeddings(es, index_name)
+        except Exception as e:
+            logger_.log(f'[ERROR] Error while adding embeddings: {str(e)}', True)
 
     logger_.log('------------ Successfully updated index ------------\n', True)
 
