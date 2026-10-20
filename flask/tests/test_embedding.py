@@ -101,5 +101,53 @@ class EmbedOrderTests(unittest.TestCase):
         self.assertEqual([int(v[0]) for v in out], [3, 1, 2])                        # original order
 
 
+class IncrementalEmbeddingTests(unittest.TestCase):
+    PARTS = [
+        {'subject': 'https://synbiohub.org/user/alice/c/p1/1', 'displayId': 'p1', 'name': 'red fluorescent reporter',
+         'type': 'http://sbols.org/v2#ComponentDefinition', 'role': 'http://identifiers.org/so/SO:0000167',
+         'graph': 'https://synbiohub.org/user/alice'},
+        {'subject': 'https://synbiohub.org/user/alice/c/p1_sequence/1', 'displayId': 'p1_sequence',
+         'type': 'http://sbols.org/v2#Sequence', 'graph': 'https://synbiohub.org/user/alice'},
+    ]
+
+    def run_update(self, enabled, embed_side_effect=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+
+        class TempCache(embedding.EmbeddingCache):
+            def __init__(self):
+                super().__init__(os.path.join(tmp.name, 'e.sqlite'))
+
+        fake_embed = mock.Mock(side_effect=embed_side_effect or
+                               (lambda texts: [np.ones(embedding.DIMENSIONS, dtype=np.float32) for _ in texts]))
+        with mock.patch('index.vector_search_enabled', return_value=enabled), \
+                mock.patch('index.embedding.EmbeddingCache', TempCache), \
+                mock.patch('index.embedding.embed', fake_embed), \
+                mock.patch('index.index_part') as index_part, \
+                mock.patch('index.load_term_list', return_value=[]), \
+                mock.patch('index.query.query_values_for_subjects', return_value={}), \
+                mock.patch('index.schedule_facet_refresh'):
+            index.incremental_update({'partsToAdd': [dict(p) for p in self.PARTS]}, {})
+        indexed = {call.args[0]['displayId']: call.args[0] for call in index_part.call_args_list}
+        return indexed, fake_embed
+
+    def test_new_part_is_embedded_and_sequence_is_not(self):
+        indexed, embed = self.run_update(enabled=True)
+        self.assertEqual(len(indexed['p1'][embedding.FIELD]), embedding.DIMENSIONS)
+        self.assertNotIn(embedding.FIELD, indexed['p1_sequence'])
+        self.assertIn('red fluorescent reporter', embed.call_args.args[0][0])
+        self.assertIn('promoter', embed.call_args.args[0][0])   # role label from the payload role
+
+    def test_nothing_is_embedded_when_vector_search_is_off(self):
+        indexed, embed = self.run_update(enabled=False)
+        embed.assert_not_called()
+        self.assertNotIn(embedding.FIELD, indexed['p1'])
+
+    def test_model_failure_still_indexes_the_part(self):
+        indexed, _ = self.run_update(enabled=True, embed_side_effect=RuntimeError('model missing'))
+        self.assertEqual(set(indexed), {'p1', 'p1_sequence'})
+        self.assertNotIn(embedding.FIELD, indexed['p1'])
+
+
 if __name__ == '__main__':
     unittest.main()

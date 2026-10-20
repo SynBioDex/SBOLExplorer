@@ -100,7 +100,9 @@ class EmbeddingCache:
     """
 
     def __init__(self, path=CACHE_PATH):
-        self.conn = sqlite3.connect(path)
+        # A full rebuild and an incremental update can use the cache at the
+        # same time; wait for the other's write instead of failing.
+        self.conn = sqlite3.connect(path, timeout=30)
         self.conn.execute('CREATE TABLE IF NOT EXISTS embeddings (key TEXT PRIMARY KEY, vector BLOB)')
 
     @staticmethod
@@ -125,3 +127,24 @@ class EmbeddingCache:
 
     def close(self):
         self.conn.close()
+
+
+def vectors_for_texts(texts, cache, stats=None):
+    """
+    {id: text} -> {id: vector} for the ids with non-empty text. Cached vectors
+    are reused; the rest are embedded once per distinct text and cached.
+    stats, if given, counts 'cached', 'computed' and 'no_text'.
+    """
+    keys = {i: EmbeddingCache.key(text) for i, text in texts.items() if text}
+    found = cache.get_many(set(keys.values()))
+    missing = sorted({key for key in keys.values() if key not in found})
+    if missing:
+        text_by_key = {keys[i]: texts[i] for i in keys}
+        computed = embed([text_by_key[key] for key in missing])
+        cache.put_many(zip(missing, computed))
+        found.update(zip(missing, computed))
+    if stats is not None:
+        stats['no_text'] += len(texts) - len(keys)
+        stats['computed'] += len(missing)
+        stats['cached'] += len(keys) - len(missing)
+    return {i: found[key] for i, key in keys.items()}
