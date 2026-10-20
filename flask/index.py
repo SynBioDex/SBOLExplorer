@@ -3,6 +3,7 @@ import threading
 from elasticsearch import helpers
 from configManager import ConfigManager
 from elasticsearchManager import ElasticsearchManager
+import embedding
 import facets
 import query
 import json
@@ -107,7 +108,8 @@ def create_parts_index(index_name):
                 'graph': {
                     'type': 'keyword'
                 },
-                **{facet['field']: {'type': 'keyword'} for facet in facets.FACETS.values()}
+                **{facet['field']: {'type': 'keyword'} for facet in facets.FACETS.values()},
+                embedding.FIELD: embedding.MAPPING
             },
         },
         'settings': {
