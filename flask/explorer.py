@@ -149,6 +149,15 @@ def update():
         if subject:
             index.refresh_index(subject, data_manager.get_uri2rank())
             success_message = f'Successfully refreshed: {subject}'
+        elif request.args.get('embeddings_only'):
+            # Only the embedding field: no clustering, PageRank or facets.
+            if not indexing_lock.acquire(blocking=False):
+                return 'An index update is already running', 409
+            try:
+                index.update_embeddings_only()
+            finally:
+                indexing_lock.release()
+            success_message = 'Successfully updated embeddings'
         else:
             if not update_index():
                 return 'An index update is already running', 409
