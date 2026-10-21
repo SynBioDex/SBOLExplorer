@@ -309,6 +309,22 @@ def refresh_facet_fields(subjects, remaining_delays=()):
     schedule_facet_refresh(pending, remaining_delays)
 
 
+def update_embeddings_only():
+    """
+    Embeds the parts already in the index, without re-reading Virtuoso, the
+    clustering, PageRank or facets: the existing documents keep those fields.
+    Adds the embedding mapping first if the index was built without it.
+    """
+    index_name = config['elasticsearch_index_name']
+    es = elasticsearch_manager.get_es()
+    if not es.indices.exists(index=index_name):
+        raise RuntimeError(f'Index {index_name} does not exist; run a full /update first')
+    if embedding.FIELD not in es.indices.get_mapping(index=index_name)[index_name]['mappings'].get('properties', {}):
+        es.indices.put_mapping(index=index_name, properties={embedding.FIELD: embedding.MAPPING})
+        logger_.log(f'Added {embedding.FIELD} mapping to {index_name}', True)
+    index_embeddings(es, index_name)
+
+
 def index_embeddings(es, index_name):
     """
     Writes the embedding of every non-Sequence part already in the index
