@@ -12,6 +12,7 @@ import pagerank
 import index
 import facets
 import search
+import vector_search
 import query
 from configManager import ConfigManager
 from dataManager import DataManager
@@ -241,6 +242,34 @@ def search_by_string():
         return response
     except Exception as e:
         log.error(f'Error during search by string: {e}')
+        raise
+
+@app.route('/vector_search', methods=['GET'])
+def vector_search_by_string():
+    """
+    Parts closest in meaning to the query text; see vector_search.py.
+
+    GET /vector_search?query=<text>&graph=<public>&graph=<user graph>&size=10
+    """
+    try:
+        es = elasticsearch_manager.get_es()
+        index_name = config_manager.load_config().get('elasticsearch_index_name')
+        if not es.indices.exists(index=index_name) or es.cat.indices(index=index_name, format='json')[0]['health'] == 'red':
+            abort(503, 'Elasticsearch is not working or the index does not exist.')
+        if not index.vector_search_enabled():
+            abort(503, 'Vector search is turned off (vector_search in the config).')
+
+        query = request.args.get('query', '').strip()
+        if not query:
+            abort(400, 'query is required')
+        try:
+            size = min(max(int(request.args.get('size', 10)), 1), vector_search.MAX_SIZE)
+        except ValueError:
+            abort(400, 'size must be an integer')
+
+        return jsonify(vector_search.vector_search_es(query, request.args.getlist('graph'), size)['hits'])
+    except Exception as e:
+        log.error(f'Error during vector search: {e}')
         raise
 
 @app.route('/facets', methods=['GET'])
