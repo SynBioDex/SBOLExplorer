@@ -218,6 +218,8 @@ def sparql_search_endpoint():
 
         sparql_query = request.args.get('query')
         if sparql_query:
+            # SynBioHub emits a lone apostrophe keyword as lcase(\') with no string literal, which Virtuoso rejects.
+            sparql_query = sparql_query.replace("lcase(\\')", "lcase('\\'')")
             default_graph_uri = request.args.get('default-graph-uri')
             response = jsonify(search.search(
                 sparql_query, 
