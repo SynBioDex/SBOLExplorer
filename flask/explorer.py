@@ -260,7 +260,9 @@ def vector_search_by_string():
     """
     Parts closest in meaning to the query text; see vector_search.py.
 
-    GET /vector_search?query=<text>&graph=<public>&graph=<user graph>&size=10
+    GET /vector_search?query=<text>&graph=<public>&graph=<user graph>&size=10&role=<uri>&facet_by=role,type
+    Facet values (role=, type=, ...) narrow the hits, as on /facets.
+    With facet_by, the response also has 'facets': counts over the returned hits.
     """
     try:
         es = elasticsearch_manager.get_es()
@@ -278,7 +280,16 @@ def vector_search_by_string():
         except ValueError:
             abort(400, 'size must be an integer')
 
-        return jsonify(vector_search.vector_search_es(query, request.args.getlist('graph'), size)['hits'])
+        graphs = request.args.getlist('graph')
+        facet_by = [f.strip() for f in request.args.get('facet_by', '').split(',') if f.strip()]
+        unknown = [f for f in facet_by if f not in facets.FACETS]
+        if unknown:
+            abort(400, f'Unknown facet(s): {", ".join(unknown)}. Valid: {", ".join(facets.FACETS)}')
+        selected = {name: request.args.getlist(name) for name in facets.FACETS}
+        hits = vector_search.vector_search_es(query, graphs, size, selected)['hits']
+        if facet_by:
+            hits = {**hits, 'facets': vector_search.facets_for_hits(hits['hits'], facet_by, graphs)}
+        return jsonify(hits)
     except Exception as e:
         log.error(f'Error during vector search: {e}')
         raise
