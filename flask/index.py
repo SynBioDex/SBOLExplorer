@@ -221,6 +221,14 @@ def index_facet_fields(es, index_name):
 # Virtuoso knows (collections, creator) are fetched again; see
 # schedule_facet_refresh.
 FACET_REFRESH_DELAYS = (30, 120, 600)
+# Seconds between checks for due facet refreshes (so a refresh can run up to
+# this long after its delay).
+FACET_REFRESH_TICK = 30
+
+_facet_refresh_lock = threading.Lock()
+# subject -> (monotonic time when it is due, delays left after that attempt)
+_facet_refresh_pending = {}
+_facet_refresh_thread = None
 
 # Facets whose value SynBioHub already sends in the /incrementalupdate payload.
 PAYLOAD_FACETS = {'role': 'role', 'sboltype': 'sboltype', 'type': 'type'}
@@ -272,12 +280,41 @@ def schedule_facet_refresh(subjects, delays=FACET_REFRESH_DELAYS):
     it uploads the submission to Virtuoso, so collections and creator (which
     only Virtuoso has) are usually missing at that point. Each attempt keeps
     the parts that still have no collection for the next delay.
+
+    All submissions share one background thread, which checks for due parts
+    every FACET_REFRESH_TICK seconds, so a burst of submissions costs one
+    Virtuoso query per facet per tick instead of a timer chain per submission.
     """
+    global _facet_refresh_thread
     if not subjects or not delays:
         return
-    timer = threading.Timer(delays[0], refresh_facet_fields, args=(list(subjects), tuple(delays[1:])))
-    timer.daemon = True
-    timer.start()
+    due = time.monotonic() + delays[0]
+    with _facet_refresh_lock:
+        for subject in subjects:
+            _facet_refresh_pending[subject] = (due, tuple(delays[1:]))
+        if _facet_refresh_thread is None:
+            _facet_refresh_thread = threading.Thread(target=_run_facet_refreshes, daemon=True)
+            _facet_refresh_thread.start()
+
+
+def _run_facet_refreshes():
+    """Refreshes the due parts every tick until none are pending."""
+    global _facet_refresh_thread
+    while True:
+        time.sleep(FACET_REFRESH_TICK)
+        due_by_remaining = {}
+        with _facet_refresh_lock:
+            now = time.monotonic()
+            for subject, (due, remaining) in list(_facet_refresh_pending.items()):
+                if due <= now:
+                    del _facet_refresh_pending[subject]
+                    due_by_remaining.setdefault(remaining, []).append(subject)
+        for remaining, subjects in due_by_remaining.items():
+            refresh_facet_fields(subjects, remaining)
+        with _facet_refresh_lock:
+            if not _facet_refresh_pending:
+                _facet_refresh_thread = None
+                return
 
 
 def refresh_facet_fields(subjects, remaining_delays=()):
@@ -302,9 +339,9 @@ def refresh_facet_fields(subjects, remaining_delays=()):
         if actions:
             helpers.bulk(elasticsearch_manager.get_es(), actions, raise_on_error=False)
         pending = [subject for subject, fields in found.items() if not fields.get(collections_field)]
-        logger_.log(f'Facet refresh: {len(subjects) - len(pending)} of {len(subjects)} parts complete', True)
+        logger_.log(f'Facet refresh: {len(subjects) - len(pending)} of {len(subjects)} parts complete')
     except Exception as e:
-        logger_.log(f'[ERROR] Facet refresh failed: {str(e)}', True)
+        logger_.log(f'[ERROR] Facet refresh failed: {str(e)}')
         pending = subjects
     schedule_facet_refresh(pending, remaining_delays)
 
