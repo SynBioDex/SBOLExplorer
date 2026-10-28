@@ -260,8 +260,9 @@ def vector_search_by_string():
     """
     Parts closest in meaning to the query text; see vector_search.py.
 
-    GET /vector_search?query=<text>&graph=<public>&graph=<user graph>&size=10&role=<uri>&facet_by=role,type
+    GET /vector_search?query=<text>&graph=<public>&graph=<user graph>&size=10&offset=0&role=<uri>&facet_by=role,type
     Facet values (role=, type=, ...) narrow the hits, as on /facets.
+    'count' is the Top N (all results this search has, at most MAX_RESULTS).
     With facet_by, the response also has 'facets': counts over the returned hits.
     """
     try:
@@ -285,8 +286,18 @@ def vector_search_by_string():
         unknown = [f for f in facet_by if f not in facets.FACETS]
         if unknown:
             abort(400, f'Unknown facet(s): {", ".join(unknown)}. Valid: {", ".join(facets.FACETS)}')
+        try:
+            offset = int(request.args.get('offset', 0))
+        except ValueError:
+            abort(400, 'offset must be an integer')
+        if not 0 <= offset < vector_search.MAX_RESULTS:
+            abort(400, f'offset must be between 0 and {vector_search.MAX_RESULTS - 1}')
+        size = min(size, vector_search.MAX_RESULTS - offset)
+
         selected = {name: request.args.getlist(name) for name in facets.FACETS}
-        hits = vector_search.vector_search_es(query, graphs, size, selected)['hits']
+        hits = vector_search.vector_search_es(query, graphs, size, selected, offset)['hits']
+        # 'count' is the Top N: how many parts this search returns in all
+        hits = {**hits, 'count': vector_search.top_n(graphs, selected)}
         if facet_by:
             hits = {**hits, 'facets': vector_search.facets_for_hits(hits['hits'], facet_by, graphs)}
         return jsonify(hits)

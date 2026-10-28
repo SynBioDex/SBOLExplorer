@@ -23,6 +23,18 @@ class VectorSearchQueryTests(unittest.TestCase):
         self.assertEqual(body['size'], 10)
         self.assertGreaterEqual(body['knn']['num_candidates'], body['knn']['k'])
 
+    def test_offset_asks_for_offset_plus_size_and_drops_the_first_offset(self):
+        hits = [{'_id': str(i)} for i in range(7)]
+        with mock.patch('vector_search.embedding.embed', return_value=[np.ones(embedding.DIMENSIONS, dtype=np.float32)]), \
+                mock.patch.object(vector_search.config_manager, 'load_config', return_value={'elasticsearch_index_name': 'part'}), \
+                mock.patch.object(vector_search.elasticsearch_manager, 'get_es') as get_es:
+            get_es.return_value.search.return_value = {'hits': {'hits': hits}}
+            response = vector_search.vector_search_es('rbs', [], 3, None, 4)
+        body = get_es.return_value.search.call_args.kwargs['body']
+        self.assertEqual(body['knn']['k'], 7)
+        self.assertEqual(body['knn']['num_candidates'], 100)
+        self.assertEqual([h['_id'] for h in response['hits']['hits']], ['4', '5', '6'])
+
     def test_selected_facets_narrow_the_knn_filter(self):
         with mock.patch('vector_search.embedding.embed', return_value=[np.ones(embedding.DIMENSIONS, dtype=np.float32)]), \
                 mock.patch.object(vector_search.config_manager, 'load_config', return_value={'elasticsearch_index_name': 'part'}), \
@@ -37,6 +49,23 @@ class VectorSearchQueryTests(unittest.TestCase):
         self.assertEqual(self.search([], 5)['knn']['filter'], {'bool': {'must_not': {'wildcard': {'graph': '*/user/*'}}}})
         self.assertEqual(self.search(['https://synbiohub.org/user/alice'], 5)['knn']['filter'],
                          {'terms': {'graph': ['https://synbiohub.org/user/alice']}})
+
+
+class TopNTests(unittest.TestCase):
+    def top_n(self, count):
+        with mock.patch.object(vector_search.config_manager, 'load_config', return_value={'elasticsearch_index_name': 'part'}), \
+                mock.patch.object(vector_search.elasticsearch_manager, 'get_es') as get_es:
+            get_es.return_value.count.return_value = {'count': count}
+            result = vector_search.top_n([], {})
+        return result, get_es.return_value.count.call_args.kwargs['body']
+
+    def test_is_the_number_of_visible_embedded_parts(self):
+        result, body = self.top_n(30)
+        self.assertEqual(result, 30)
+        self.assertIn({'exists': {'field': embedding.FIELD}}, body['query']['bool']['filter'])
+
+    def test_is_capped_at_max_results(self):
+        self.assertEqual(self.top_n(2500)[0], vector_search.MAX_RESULTS)
 
 
 class VectorSearchFacetTests(unittest.TestCase):
