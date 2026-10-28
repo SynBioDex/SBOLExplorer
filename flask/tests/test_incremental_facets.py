@@ -69,13 +69,44 @@ class RefreshFacetFieldsTests(unittest.TestCase):
         index.refresh_facet_fields(['s1', 's2'], (600,))
         schedule.assert_called_once_with(['s1', 's2'], (600,))
 
-    @mock.patch('index.threading.Timer')
-    def test_schedule_stops_when_nothing_left(self, timer):
+    def setUp(self):
+        index._facet_refresh_pending.clear()
+
+    @mock.patch('index.threading.Thread')
+    def test_schedule_stops_when_nothing_left(self, thread):
         index.schedule_facet_refresh([], (30,))
         index.schedule_facet_refresh(['s1'], ())
-        timer.assert_not_called()
+        thread.assert_not_called()
+        self.assertEqual(index._facet_refresh_pending, {})
+
+    @mock.patch('index.threading.Thread')
+    def test_submissions_share_one_thread_and_pending_set(self, thread):
+        index._facet_refresh_thread = None
         index.schedule_facet_refresh(['s1'], (30, 120))
-        timer.assert_called_once_with(30, index.refresh_facet_fields, args=(['s1'], (120,)))
+        index._facet_refresh_thread = thread.return_value  # as if it were still running
+        index.schedule_facet_refresh(['s2'], (30, 120))
+        thread.assert_called_once()
+        self.assertEqual(set(index._facet_refresh_pending), {'s1', 's2'})
+        self.assertEqual(index._facet_refresh_pending['s1'][1], (120,))
+        index._facet_refresh_thread = None
+
+    @mock.patch('index.refresh_facet_fields')
+    @mock.patch('index.time.sleep')
+    def test_tick_refreshes_only_due_parts_grouped_by_remaining_delays(self, _sleep, refresh):
+        index._facet_refresh_pending.update({
+            's1': (0, (120,)), 's2': (0, (120,)), 's3': (1e12, (600,))})
+        index._facet_refresh_thread = mock.Mock()
+        still_pending = []
+
+        def finish_pass(subjects, remaining):
+            still_pending.append(set(index._facet_refresh_pending))
+            index._facet_refresh_pending.clear()  # nothing rescheduled, so the thread exits
+
+        refresh.side_effect = finish_pass
+        index._run_facet_refreshes()
+        refresh.assert_called_once_with(['s1', 's2'], (120,))
+        self.assertEqual(still_pending, [{'s3'}])
+        self.assertIsNone(index._facet_refresh_thread)
 
 
 if __name__ == '__main__':
