@@ -12,6 +12,7 @@ import pagerank
 import index
 import facets
 import search
+import vector_search
 import query
 from configManager import ConfigManager
 from dataManager import DataManager
@@ -148,6 +149,15 @@ def update():
         if subject:
             index.refresh_index(subject, data_manager.get_uri2rank())
             success_message = f'Successfully refreshed: {subject}'
+        elif request.args.get('embeddings_only'):
+            # Only the embedding field: no clustering, PageRank or facets.
+            if not indexing_lock.acquire(blocking=False):
+                return 'An index update is already running', 409
+            try:
+                index.update_embeddings_only()
+            finally:
+                indexing_lock.release()
+            success_message = 'Successfully updated embeddings'
         else:
             if not update_index():
                 return 'An index update is already running', 409
@@ -208,6 +218,8 @@ def sparql_search_endpoint():
 
         sparql_query = request.args.get('query')
         if sparql_query:
+            # SynBioHub emits a lone apostrophe keyword as lcase(\') with no string literal, which Virtuoso rejects.
+            sparql_query = sparql_query.replace("lcase(\\')", "lcase('\\'')")
             default_graph_uri = request.args.get('default-graph-uri')
             response = jsonify(search.search(
                 sparql_query, 
@@ -241,6 +253,56 @@ def search_by_string():
         return response
     except Exception as e:
         log.error(f'Error during search by string: {e}')
+        raise
+
+@app.route('/vector_search', methods=['GET'])
+def vector_search_by_string():
+    """
+    Parts closest in meaning to the query text; see vector_search.py.
+
+    GET /vector_search?query=<text>&graph=<public>&graph=<user graph>&size=10&offset=0&role=<uri>&facet_by=role,type
+    Facet values (role=, type=, ...) narrow the hits, as on /facets.
+    'count' is the Top N (all results this search has, at most MAX_RESULTS).
+    With facet_by, the response also has 'facets': counts over the returned hits.
+    """
+    try:
+        es = elasticsearch_manager.get_es()
+        index_name = config_manager.load_config().get('elasticsearch_index_name')
+        if not es.indices.exists(index=index_name) or es.cat.indices(index=index_name, format='json')[0]['health'] == 'red':
+            abort(503, 'Elasticsearch is not working or the index does not exist.')
+        if not index.vector_search_enabled():
+            abort(503, 'Vector search is turned off (vector_search in the config).')
+
+        query = request.args.get('query', '').strip()
+        if not query:
+            abort(400, 'query is required')
+        try:
+            size = min(max(int(request.args.get('size', 10)), 1), vector_search.MAX_SIZE)
+        except ValueError:
+            abort(400, 'size must be an integer')
+
+        graphs = request.args.getlist('graph')
+        facet_by = [f.strip() for f in request.args.get('facet_by', '').split(',') if f.strip()]
+        unknown = [f for f in facet_by if f not in facets.FACETS]
+        if unknown:
+            abort(400, f'Unknown facet(s): {", ".join(unknown)}. Valid: {", ".join(facets.FACETS)}')
+        try:
+            offset = int(request.args.get('offset', 0))
+        except ValueError:
+            abort(400, 'offset must be an integer')
+        if not 0 <= offset < vector_search.MAX_RESULTS:
+            abort(400, f'offset must be between 0 and {vector_search.MAX_RESULTS - 1}')
+        size = min(size, vector_search.MAX_RESULTS - offset)
+
+        selected = {name: request.args.getlist(name) for name in facets.FACETS}
+        hits = vector_search.vector_search_es(query, graphs, size, selected, offset)['hits']
+        # 'count' is the Top N: how many parts this search returns in all
+        hits = {**hits, 'count': vector_search.top_n(graphs, selected)}
+        if facet_by:
+            hits = {**hits, 'facets': vector_search.facets_for_hits(hits['hits'], facet_by, graphs)}
+        return jsonify(hits)
+    except Exception as e:
+        log.error(f'Error during vector search: {e}')
         raise
 
 @app.route('/facets', methods=['GET'])

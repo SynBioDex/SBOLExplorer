@@ -1,8 +1,10 @@
 import threading
+import time
 
 from elasticsearch import helpers
 from configManager import ConfigManager
 from elasticsearchManager import ElasticsearchManager
+import embedding
 import facets
 import query
 import json
@@ -107,7 +109,8 @@ def create_parts_index(index_name):
                 'graph': {
                     'type': 'keyword'
                 },
-                **{facet['field']: {'type': 'keyword'} for facet in facets.FACETS.values()}
+                **{facet['field']: {'type': 'keyword'} for facet in facets.FACETS.values()},
+                embedding.FIELD: embedding.MAPPING
             },
         },
         'settings': {
@@ -218,6 +221,14 @@ def index_facet_fields(es, index_name):
 # Virtuoso knows (collections, creator) are fetched again; see
 # schedule_facet_refresh.
 FACET_REFRESH_DELAYS = (30, 120, 600)
+# Seconds between checks for due facet refreshes (so a refresh can run up to
+# this long after its delay).
+FACET_REFRESH_TICK = 30
+
+_facet_refresh_lock = threading.Lock()
+# subject -> (monotonic time when it is due, delays left after that attempt)
+_facet_refresh_pending = {}
+_facet_refresh_thread = None
 
 # Facets whose value SynBioHub already sends in the /incrementalupdate payload.
 PAYLOAD_FACETS = {'role': 'role', 'sboltype': 'sboltype', 'type': 'type'}
@@ -269,12 +280,41 @@ def schedule_facet_refresh(subjects, delays=FACET_REFRESH_DELAYS):
     it uploads the submission to Virtuoso, so collections and creator (which
     only Virtuoso has) are usually missing at that point. Each attempt keeps
     the parts that still have no collection for the next delay.
+
+    All submissions share one background thread, which checks for due parts
+    every FACET_REFRESH_TICK seconds, so a burst of submissions costs one
+    Virtuoso query per facet per tick instead of a timer chain per submission.
     """
+    global _facet_refresh_thread
     if not subjects or not delays:
         return
-    timer = threading.Timer(delays[0], refresh_facet_fields, args=(list(subjects), tuple(delays[1:])))
-    timer.daemon = True
-    timer.start()
+    due = time.monotonic() + delays[0]
+    with _facet_refresh_lock:
+        for subject in subjects:
+            _facet_refresh_pending[subject] = (due, tuple(delays[1:]))
+        if _facet_refresh_thread is None:
+            _facet_refresh_thread = threading.Thread(target=_run_facet_refreshes, daemon=True)
+            _facet_refresh_thread.start()
+
+
+def _run_facet_refreshes():
+    """Refreshes the due parts every tick until none are pending."""
+    global _facet_refresh_thread
+    while True:
+        time.sleep(FACET_REFRESH_TICK)
+        due_by_remaining = {}
+        with _facet_refresh_lock:
+            now = time.monotonic()
+            for subject, (due, remaining) in list(_facet_refresh_pending.items()):
+                if due <= now:
+                    del _facet_refresh_pending[subject]
+                    due_by_remaining.setdefault(remaining, []).append(subject)
+        for remaining, subjects in due_by_remaining.items():
+            refresh_facet_fields(subjects, remaining)
+        with _facet_refresh_lock:
+            if not _facet_refresh_pending:
+                _facet_refresh_thread = None
+                return
 
 
 def refresh_facet_fields(subjects, remaining_delays=()):
@@ -299,11 +339,118 @@ def refresh_facet_fields(subjects, remaining_delays=()):
         if actions:
             helpers.bulk(elasticsearch_manager.get_es(), actions, raise_on_error=False)
         pending = [subject for subject, fields in found.items() if not fields.get(collections_field)]
-        logger_.log(f'Facet refresh: {len(subjects) - len(pending)} of {len(subjects)} parts complete', True)
+        logger_.log(f'Facet refresh: {len(subjects) - len(pending)} of {len(subjects)} parts complete')
     except Exception as e:
-        logger_.log(f'[ERROR] Facet refresh failed: {str(e)}', True)
+        logger_.log(f'[ERROR] Facet refresh failed: {str(e)}')
         pending = subjects
     schedule_facet_refresh(pending, remaining_delays)
+
+
+def update_embeddings_only():
+    """
+    Embeds the parts already in the index, without re-reading Virtuoso, the
+    clustering, PageRank or facets: the existing documents keep those fields.
+    Adds the embedding mapping first if the index was built without it.
+    """
+    index_name = config['elasticsearch_index_name']
+    es = elasticsearch_manager.get_es()
+    if not es.indices.exists(index=index_name):
+        raise RuntimeError(f'Index {index_name} does not exist; run a full /update first')
+    if embedding.FIELD not in es.indices.get_mapping(index=index_name)[index_name]['mappings'].get('properties', {}):
+        es.indices.put_mapping(index=index_name, properties={embedding.FIELD: embedding.MAPPING})
+        logger_.log(f'Added {embedding.FIELD} mapping to {index_name}', True)
+    index_embeddings(es, index_name)
+
+
+def index_embeddings(es, index_name):
+    """
+    Writes the embedding of every non-Sequence part already in the index
+    (partial updates). Vectors come from the on-disk cache when the part's
+    text is unchanged since an earlier build; only new or changed text is
+    embedded (~150 parts/s locally with all-MiniLM-L6-v2).
+    """
+    cache = embedding.EmbeddingCache()
+    stats = {'cached': 0, 'computed': 0, 'no_text': 0}
+    started = time.monotonic()
+
+    def vectors_for(hits):
+        texts = {hit['_id']: embedding.part_text(hit['_source']) for hit in hits}
+        return embedding.vectors_for_texts(texts, cache, stats)
+
+    def actions():
+        batch = []
+        hits = helpers.scan(es, index=index_name, _source=embedding.SOURCE_FIELDS, size=1000,
+                            query={'query': {'bool': {'must_not': {'terms': {'facet_type': embedding.SKIPPED_TYPES}}}}})
+        for hit in hits:
+            batch.append(hit)
+            if len(batch) == embedding.BATCH_SIZE:
+                yield from update_actions(vectors_for(batch))
+                batch = []
+                done = stats['cached'] + stats['computed']
+                if done % 10240 < embedding.BATCH_SIZE:
+                    logger_.log(f'Embeddings: {done} parts ({stats["computed"]} computed, '
+                                f'{stats["cached"]} from cache) in {time.monotonic() - started:.0f}s', True)
+        if batch:
+            yield from update_actions(vectors_for(batch))
+
+    def update_actions(vectors):
+        for subject, vector in vectors.items():
+            yield {'_op_type': 'update', '_index': index_name, '_id': subject,
+                   'doc': {embedding.FIELD: vector.tolist()}}
+
+    updated = failed = 0
+    try:
+        for ok, item in helpers.streaming_bulk(es, actions(), raise_on_error=False):
+            if ok:
+                updated += 1
+            else:
+                failed += 1
+                if failed <= 3:
+                    logger_.log(f'[ERROR] embedding update failed: {item}', True)
+    finally:
+        cache.close()
+    logger_.log(f'Embeddings: updated {updated} parts ({stats["computed"]} computed, '
+                f'{stats["cached"]} from cache, {stats["no_text"]} without text, {failed} failed) '
+                f'in {time.monotonic() - started:.0f}s', True)
+
+
+def add_embeddings(parts):
+    """
+    Sets the embedding of parts about to be indexed one by one (incremental
+    update / refresh), with the same text, cache and model as a full build.
+    """
+    def embeddable(part):
+        types = set(part.get(facets.FACETS['type']['field']) or []) | {part.get('type')}
+        return not types & set(embedding.SKIPPED_TYPES)
+
+    texts = {part['subject']: embedding.part_text(part) for part in parts if embeddable(part)}
+    if not texts:
+        return
+    cache = embedding.EmbeddingCache()
+    try:
+        vectors = embedding.vectors_for_texts(texts, cache)
+    finally:
+        cache.close()
+    for part in parts:
+        if part['subject'] in vectors:
+            part[embedding.FIELD] = vectors[part['subject']].tolist()
+
+
+def add_embeddings_safely(parts):
+    # Only with vector search on; a failure leaves the part searchable by
+    # text, and the next full /update embeds it.
+    if not vector_search_enabled():
+        return
+    try:
+        add_embeddings(parts)
+    except Exception as e:
+        logger_.log(f'[ERROR] Error while adding embeddings: {str(e)}', True)
+
+
+def vector_search_enabled():
+    # Re-read so a /config change made at runtime is honoured.
+    config_manager._config = None
+    return bool(config_manager.load_config().get('vector_search', False))
 
 
 def load_term_list():
@@ -372,6 +519,15 @@ def update_index(uri2rank):
     except Exception as e:
         logger_.log(f'[ERROR] Error while adding facet fields: {str(e)}', True)
 
+    # Off unless config sets vector_search: the first build embeds every part
+    # (about an hour for production); later builds reuse the cache.
+    if vector_search_enabled():
+        try:
+            logger_.log('******** Adding embeddings ********', True)
+            index_embeddings(es, index_name)
+        except Exception as e:
+            logger_.log(f'[ERROR] Error while adding embeddings: {str(e)}', True)
+
     logger_.log('------------ Successfully updated index ------------\n', True)
 
 
@@ -413,6 +569,7 @@ def refresh_index(subject, uri2rank):
         add_pagerank(part_response, uri2rank)
         add_keywords(part_response)
         add_facet_fields_safely(part_response)
+        add_embeddings_safely(part_response)
         index_part(part_response[0])
 
 
@@ -430,6 +587,7 @@ def incremental_update(updates, uri2rank):
     add_sbol_type(parts_to_add)
     add_facet_fields_from_payload(parts_to_add)
     add_facet_fields_safely(parts_to_add)
+    add_embeddings_safely(parts_to_add)
 
     for part in parts_to_add:
         index_part(part)
