@@ -66,6 +66,25 @@ class SearchDatasetTests(unittest.TestCase):
         self.assertEqual(from_clause, "FROM <http://example.test/user/alice>")
 
 
+class QueryPartsFreshnessTests(unittest.TestCase):
+    """#187: a part added to a collection must show up in the next search."""
+
+    @mock.patch("query.query_sparql")
+    def test_repeated_query_reads_virtuoso_again(self, query_sparql):
+        criteria = "<http://example.test/public/collection/1> sbol2:member ?subject ."
+        query_sparql.side_effect = [
+            [{"subject": "http://example.test/part1"}],
+            [{"subject": "http://example.test/part1"}, {"subject": "http://example.test/part2"}],
+        ]
+
+        before = query.query_parts("FROM <http://example.test/public>", criteria)
+        after = query.query_parts("FROM <http://example.test/public>", criteria)
+
+        self.assertEqual(query_sparql.call_count, 2)
+        self.assertEqual(len(before), 1)
+        self.assertEqual(len(after), 2)
+
+
 class StartupOrderTests(unittest.TestCase):
     def test_update_index_is_defined_before_startup_is_called(self):
         source = Path(__file__).parents[1] / "explorer.py"

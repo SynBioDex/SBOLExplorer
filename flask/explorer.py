@@ -111,16 +111,13 @@ def _update_index():
     data_manager.save_uri2rank(uri2rank)
 
     index.update_index(data_manager.get_uri2rank())
-    
-    query.memoized_query_sparql.cache_clear()
-    logger_.log('Cache cleared', True)
 
     config_manager.save_update_end_time()
     logger_.log('============ INDEXING COMPLETED ============\n\n', True)
 
 @app.route('/info', methods=['GET'])
 def info():
-    logger_.log('Explorer up!!! Virtuoso ' + str(query.memoized_query_sparql.cache_info()))
+    logger_.log('Explorer up!!!')
     return logger_.get_log()
 
 @app.route('/indexinginfo', methods=['GET'])
