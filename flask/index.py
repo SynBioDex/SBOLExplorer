@@ -223,6 +223,12 @@ FACET_REFRESH_DELAYS = (30, 120, 600)
 PAYLOAD_FACETS = {'role': 'role', 'sboltype': 'sboltype', 'type': 'type'}
 
 
+def is_uri(value):
+    # Facet values are URIs (SO terms, rdf:type, collections). A placeholder such
+    # as SynBioHub3's "TODO" is not, and must not become a facet value.
+    return isinstance(value, str) and ':' in value
+
+
 def add_facet_fields_from_payload(parts):
     """
     Sets facet_role / facet_sboltype / facet_type from the fields SynBioHub
@@ -232,7 +238,7 @@ def add_facet_fields_from_payload(parts):
         for name, key in PAYLOAD_FACETS.items():
             field = facets.FACETS[name]['field']
             values = set(part.get(field) or [])
-            if part.get(key):
+            if part.get(key) and is_uri(part[key]):
                 values.add(part[key])
             part[field] = sorted(values)
 
@@ -437,6 +443,41 @@ def incremental_update(updates, uri2rank):
     # Usually not in Virtuoso yet (see schedule_facet_refresh).
     collections_field = facets.FACETS['collections']['field']
     schedule_facet_refresh([part['subject'] for part in parts_to_add if not part.get(collections_field)])
+
+
+def update_membership(changes):
+    """
+    Adds or removes collection membership of parts already in the index, so the
+    collections facet (and the count that uses it) follows a change made in
+    SynBioHub without a re-index.
+
+    changes: [{'subject': part URI, 'collection': collection URI, 'action': 'add' | 'remove'}]
+    Returns the number of changes applied to an indexed part.
+    """
+    index_name = config['elasticsearch_index_name']
+    field = facets.FACETS['collections']['field']
+    actions = []
+    for change in changes:
+        action = change.get('action')
+        if action not in ('add', 'remove') or not change.get('subject') or not change.get('collection'):
+            raise ValueError(f'invalid membership change: {change}')
+        script = (
+            f"if (ctx._source.{field} == null) {{ ctx._source.{field} = []; }} "
+            + (f"if (!ctx._source.{field}.contains(params.c)) {{ ctx._source.{field}.add(params.c); }}"
+               if action == 'add' else
+               f"ctx._source.{field}.removeIf(v -> v == params.c)")
+        )
+        actions.append({
+            '_op_type': 'update', '_index': index_name, '_id': change['subject'],
+            'script': {'source': script, 'params': {'c': change['collection']}},
+        })
+    if not actions:
+        return 0
+    success, errors = helpers.bulk(elasticsearch_manager.get_es(), actions, raise_on_error=False, stats_only=False)
+    missing = [e for e in errors if e.get('update', {}).get('status') == 404]
+    if missing:
+        logger_.log(f'Membership: {len(missing)} change(s) for parts not in the index, skipped')
+    return success
 
 
 def incremental_remove(subject):

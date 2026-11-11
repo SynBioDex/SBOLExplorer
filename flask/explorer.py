@@ -181,6 +181,24 @@ def incremental_remove():
         log.error(f'Error during incremental remove: {e}')
         raise
 
+@app.route('/incrementalmembership', methods=['POST'])
+def incremental_membership():
+    """
+    Body: {"changes": [{"subject": ..., "collection": ..., "action": "add" | "remove"}]}
+    Called when a part is added to or removed from a collection in SynBioHub.
+    """
+    try:
+        changes = (request.get_json() or {}).get('changes', [])
+        applied = index.update_membership(changes)
+        success_message = f'Successfully updated membership: {applied} of {len(changes)} change(s)'
+        logger_.log(success_message)
+        return success_message
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    except Exception as e:
+        log.error(f'Error during membership update: {e}')
+        raise
+
 @app.route('/incrementalremovecollection', methods=['GET'])
 def incremental_remove_collection():
     try:
