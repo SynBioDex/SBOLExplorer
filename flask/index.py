@@ -223,12 +223,6 @@ FACET_REFRESH_DELAYS = (30, 120, 600)
 PAYLOAD_FACETS = {'role': 'role', 'sboltype': 'sboltype', 'type': 'type'}
 
 
-def is_uri(value):
-    # Facet values are URIs (SO terms, rdf:type, collections). A placeholder such
-    # as SynBioHub3's "TODO" is not, and must not become a facet value.
-    return isinstance(value, str) and ':' in value
-
-
 def add_facet_fields_from_payload(parts):
     """
     Sets facet_role / facet_sboltype / facet_type from the fields SynBioHub
@@ -238,7 +232,7 @@ def add_facet_fields_from_payload(parts):
         for name, key in PAYLOAD_FACETS.items():
             field = facets.FACETS[name]['field']
             values = set(part.get(field) or [])
-            if part.get(key) and is_uri(part[key]):
+            if part.get(key):
                 values.add(part[key])
             part[field] = sorted(values)
 
