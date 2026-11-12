@@ -111,16 +111,13 @@ def _update_index():
     data_manager.save_uri2rank(uri2rank)
 
     index.update_index(data_manager.get_uri2rank())
-    
-    query.memoized_query_sparql.cache_clear()
-    logger_.log('Cache cleared', True)
 
     config_manager.save_update_end_time()
     logger_.log('============ INDEXING COMPLETED ============\n\n', True)
 
 @app.route('/info', methods=['GET'])
 def info():
-    logger_.log('Explorer up!!! Virtuoso ' + str(query.memoized_query_sparql.cache_info()))
+    logger_.log('Explorer up!!!')
     return logger_.get_log()
 
 @app.route('/indexinginfo', methods=['GET'])
@@ -179,6 +176,24 @@ def incremental_remove():
         return success_message
     except Exception as e:
         log.error(f'Error during incremental remove: {e}')
+        raise
+
+@app.route('/incrementalmembership', methods=['POST'])
+def incremental_membership():
+    """
+    Body: {"changes": [{"subject": ..., "collection": ..., "action": "add" | "remove"}]}
+    Called when a part is added to or removed from a collection in SynBioHub.
+    """
+    try:
+        changes = (request.get_json() or {}).get('changes', [])
+        applied = index.update_membership(changes)
+        success_message = f'Successfully updated membership: {applied} of {len(changes)} change(s)'
+        logger_.log(success_message)
+        return success_message
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    except Exception as e:
+        log.error(f'Error during membership update: {e}')
         raise
 
 @app.route('/incrementalremovecollection', methods=['GET'])

@@ -439,6 +439,41 @@ def incremental_update(updates, uri2rank):
     schedule_facet_refresh([part['subject'] for part in parts_to_add if not part.get(collections_field)])
 
 
+def update_membership(changes):
+    """
+    Adds or removes collection membership of parts already in the index, so the
+    collections facet (and the count that uses it) follows a change made in
+    SynBioHub without a re-index.
+
+    changes: [{'subject': part URI, 'collection': collection URI, 'action': 'add' | 'remove'}]
+    Returns the number of changes applied to an indexed part.
+    """
+    index_name = config['elasticsearch_index_name']
+    field = facets.FACETS['collections']['field']
+    actions = []
+    for change in changes:
+        action = change.get('action')
+        if action not in ('add', 'remove') or not change.get('subject') or not change.get('collection'):
+            raise ValueError(f'invalid membership change: {change}')
+        script = (
+            f"if (ctx._source.{field} == null) {{ ctx._source.{field} = []; }} "
+            + (f"if (!ctx._source.{field}.contains(params.c)) {{ ctx._source.{field}.add(params.c); }}"
+               if action == 'add' else
+               f"ctx._source.{field}.removeIf(v -> v == params.c)")
+        )
+        actions.append({
+            '_op_type': 'update', '_index': index_name, '_id': change['subject'],
+            'script': {'source': script, 'params': {'c': change['collection']}},
+        })
+    if not actions:
+        return 0
+    success, errors = helpers.bulk(elasticsearch_manager.get_es(), actions, raise_on_error=False, stats_only=False)
+    missing = [e for e in errors if e.get('update', {}).get('status') == 404]
+    if missing:
+        logger_.log(f'Membership: {len(missing)} change(s) for parts not in the index, skipped')
+    return success
+
+
 def incremental_remove(subject):
     delete_subject(subject)
 

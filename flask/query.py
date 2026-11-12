@@ -1,6 +1,5 @@
 import requests
 import urllib.parse
-from functools import lru_cache
 from wor_client import WORClient
 import re
 from configManager import ConfigManager
@@ -63,7 +62,7 @@ def query_parts(_from='', criteria='', indexing=False):
         OPTIONAL {{ ?subject sbol2:type ?sboltype . }}
     }}
     '''
-    return memoized_query_sparql(query)
+    return query_sparql(query)
 
 def query_parts_paged(_from='', criteria='', indexing=False, page_size=10000):
     """
@@ -74,7 +73,6 @@ def query_parts_paged(_from='', criteria='', indexing=False, page_size=10000):
 
     Hits only the local SPARQL endpoint and relies on SELECT DISTINCT for
     uniqueness (no cross-endpoint dedup), so it is NOT for distributed_search.
-    Not memoized -- we never want the full corpus held in the LRU cache.
     """
     query_body = f'''
     SELECT DISTINCT
@@ -158,17 +156,6 @@ def query_values_for_subjects(pattern, subjects, chunk_size=50):
         for row in rows:
             values.setdefault(row['subject'], set()).add(row['value'])
     return values
-
-@lru_cache(maxsize=32)
-def memoized_query_sparql(query):
-    """
-    Speeds up SPARQL queries using a LRU cache.
-    Args:
-        query: SPARQL Query
-
-    Returns: Results of the SPARQL query
-    """
-    return query_sparql(query)
 
 def query_sparql(query):
     """
