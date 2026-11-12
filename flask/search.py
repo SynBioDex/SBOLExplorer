@@ -544,6 +544,19 @@ def split_graphs(allowed_graphs):
     private = [g for g in allowed_graphs if g and '/user/' in g]
     return public, private
 
+def is_private_subject(subject):
+    """
+    True for a part stored in a user graph. SynBioHub gives those parts URIs
+    under '<prefix>/user/<username>/', the same marker split_graphs uses.
+    """
+    return '/user/' in subject
+
+def split_rows(rows):
+    """Split Virtuoso rows into (public, private) by where each part lives."""
+    public = [r for r in rows if not is_private_subject(r.get('subject', ''))]
+    private = [r for r in rows if is_private_subject(r.get('subject', ''))]
+    return public, private
+
 def order_rule4_bindings(private_bindings, public_bindings, uri2rank):
     """
     Ordering for issue #158 "Note for rule 4" (non-text / structural-only search):
@@ -638,11 +651,18 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
         # results are ranked above public.
         public_graphs, private_graphs = split_graphs(allowed_graphs)
 
-        # PRIVATE -- Virtuoso, private graphs only, using the full criteria
-        # (structural + text CONTAINS). Rule 1.
+        # Structural criteria are evaluated over every graph the caller may see,
+        # not per graph: they can join triples from different graphs. A public
+        # part in a private collection has its sbol2:member triple in the user's
+        # graph and its own triples in the public graph, so neither graph alone
+        # matches it (#187). Each matching part is then routed by where it lives.
+        all_from = parse_allowed_graphs(allowed_graphs)
+
+        # PRIVATE -- Virtuoso, using the full criteria (structural + text
+        # CONTAINS), keeping parts stored in a private graph. Rule 1.
         private_bindings = []
         if private_graphs:
-            private_response = query.query_parts(parse_allowed_graphs(private_graphs), criteria)
+            _, private_response = split_rows(query.query_parts(all_from, criteria))
             private_bindings = create_criteria_bindings(private_response, uri2rank)
 
         # PUBLIC -- routed by query composition.
@@ -652,11 +672,11 @@ def search(sparql_query, uri2rank, clusters, default_graph_uri):
             public_bindings = create_bindings(es_response, clusters, public_graphs)
         elif es_query == '':
             # Rule 4: non-text only -> public all from Virtuoso.
-            public_response = query.query_parts(parse_allowed_graphs(public_graphs), filterless_criteria)
+            public_response, _ = split_rows(query.query_parts(all_from, filterless_criteria))
             public_bindings = create_criteria_bindings(public_response, uri2rank)
         else:
             # Rule 5: text + non-text -> public from ES intersect Virtuoso.
-            public_response = query.query_parts(parse_allowed_graphs(public_graphs), filterless_criteria)
+            public_response, _ = split_rows(query.query_parts(all_from, filterless_criteria))
             public_allowed = get_allowed_subjects(public_response)
             es_response = search_es_allowed_subjects(es_query, public_allowed)
             public_bindings = create_bindings(es_response, clusters, public_graphs, public_allowed)
