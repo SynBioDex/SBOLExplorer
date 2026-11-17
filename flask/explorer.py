@@ -11,6 +11,7 @@ import cluster
 import pagerank
 import index
 import facets
+import graphrag
 import search
 import vector_search
 import query
@@ -352,6 +353,39 @@ def facets_by_string():
         ))
     except Exception as e:
         log.error(f'Error during facet search: {e}')
+        raise
+
+@app.route('/graphrag', methods=['GET'])
+def graphrag_retrieve():
+    """
+    Subgraph around the parts a question is about, as triples and as text
+    context for an LLM; see graphrag.py.
+
+    GET /graphrag?query=GFP reporter&graph=<public>&graph=<user graph>&k=5&hops=1&max_neighbors=10
+    Without graph parameters only public graphs are searched, as for /facets.
+    """
+    question = request.args.get('query', '').strip()
+    if not question:
+        abort(400, 'query is required')
+
+    def int_arg(name, default, low, high):
+        try:
+            return min(max(int(request.args.get(name, default)), low), high)
+        except ValueError:
+            abort(400, f'{name} must be an integer')
+
+    try:
+        return jsonify(graphrag.retrieve(
+            question,
+            graphs=request.args.getlist('graph'),
+            k=int_arg('k', 5, 1, 20),
+            hops=int_arg('hops', 1, 1, 2),
+            max_neighbors=int_arg('max_neighbors', 10, 1, 50),
+            max_nodes=int_arg('max_nodes', 60, 1, 200),
+            uri2rank=data_manager.get_uri2rank()
+        ))
+    except Exception as e:
+        log.error(f'Error during graphrag retrieval: {e}')
         raise
 
 # Initialize Explorer after all startup dependencies, including update_index,
