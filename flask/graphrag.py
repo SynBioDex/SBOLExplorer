@@ -23,9 +23,11 @@ import query
 import search
 from configManager import ConfigManager
 from elasticsearchManager import ElasticsearchManager
+from logger import Logger
 
 config_manager = ConfigManager()
 elasticsearch_manager = ElasticsearchManager(config_manager)
+logger_ = Logger()
 
 SBOL2 = 'http://sbols.org/v2#'
 
@@ -66,10 +68,14 @@ def graph_clause(graphs: List[str]) -> str:
     return 'FILTER(!CONTAINS(STR(?g), "/user/"))'
 
 
-def find_seeds(question: str, graphs: List[str], k: int = 5) -> List[Dict]:
-    """The k best-matching top-level parts/collections for the question."""
+def seed_filter(graphs: List[str]) -> Dict:
+    return {'bool': {'filter': [facets.graph_filter(graphs), {'terms': {'type.keyword': SEED_TYPES}}]}}
+
+
+def text_hits(question: str, graphs: List[str], size: int) -> List[Dict]:
+    """Keyword search, as /search ranks it (text score x pagerank)."""
     body = {
-        'size': k,
+        'size': size,
         'query': {
             'function_score': {
                 'query': {
@@ -78,26 +84,89 @@ def find_seeds(question: str, graphs: List[str], k: int = 5) -> List[Dict]:
                         # A part named by its ID ("what is in BBa_B0015?") must
                         # beat fuzzy matches such as BBa_B0012 and BBa_B0010.
                         'should': [{'match': {'displayId': {'query': question, 'boost': 20}}}],
-                        'filter': [facets.graph_filter(graphs), {'terms': {'type.keyword': SEED_TYPES}}]
+                        'filter': [seed_filter(graphs)]
                     }
                 },
                 'script_score': {
                     'script': {'source': "_score * Math.log(doc['pagerank'].value + 1)"}
                 }
             }
-        }
+        },
+        '_source': {'excludes': ['embedding']}
     }
     index_name = config_manager.load_config()['elasticsearch_index_name']
-    hits = elasticsearch_manager.get_es().search(index=index_name, body=body)['hits']['hits']
+    return elasticsearch_manager.get_es().search(index=index_name, body=body)['hits']['hits']
+
+
+def vector_hits(question: str, graphs: List[str], size: int) -> List[Dict]:
+    """Nearest parts by meaning (the vector_search embeddings)."""
+    import embedding  # loads the ONNX model only when vector search is on
+    body = {
+        'knn': {
+            'field': embedding.FIELD,
+            'query_vector': embedding.embed([question])[0].tolist(),
+            'k': size,
+            'num_candidates': max(100, 10 * size),
+            'filter': seed_filter(graphs)
+        },
+        'size': size,
+        '_source': {'excludes': [embedding.FIELD]}
+    }
+    index_name = config_manager.load_config()['elasticsearch_index_name']
+    return elasticsearch_manager.get_es().search(index=index_name, body=body)['hits']['hits']
+
+
+def vector_search_enabled() -> bool:
+    return bool(config_manager.load_config().get('vector_search', False))
+
+
+def interleave(rankings: Dict[str, List[Dict]], k: int) -> List[Dict]:
+    """
+    The first k distinct hits taking turns between rankings (text 1, vector 1,
+    text 2, ...); each entry records every ranking that has the hit.
+
+    Interleaving rather than reciprocal rank fusion: the text ranking is right
+    for names and IDs ("GFP" must give GFP itself, not the devices containing
+    it nor YFP) and the vector ranking for parts described in other words
+    ("stops transcription" -> terminators). RRF lifts hits found by both and so
+    pushed GFP to third and YFP out of the top 5; taking turns keeps the text
+    top hit first and still gives the vector ranking seats among the seeds.
+    """
+    found = {}
+    for source, hits in rankings.items():
+        for hit in hits:
+            found.setdefault(hit['_id'], {'hit': hit, 'matched_by': []})['matched_by'].append(source)
+    out, seen = [], set()
+    for rank in range(max((len(h) for h in rankings.values()), default=0)):
+        for hits in rankings.values():
+            if rank < len(hits) and hits[rank]['_id'] not in seen and len(out) < k:
+                seen.add(hits[rank]['_id'])
+                out.append(found[hits[rank]['_id']])
+    return out
+
+
+def find_seeds(question: str, graphs: List[str], k: int = 5) -> List[Dict]:
+    """
+    The k best-matching top-level parts/collections for the question: keyword
+    search fused with vector search when it is turned on, else keywords only.
+    """
+    # k from each ranking always holds k distinct hits to take turns over
+    rankings = {'text': text_hits(question, graphs, k)}
+    if vector_search_enabled():
+        try:
+            rankings['vector'] = vector_hits(question, graphs, k)
+        except Exception as e:  # e.g. index built before embeddings were added
+            logger_.log(f'[ERROR] graphrag vector search failed, using keywords only: {e}')
     return [{
-        'uri': hit['_source']['subject'],
-        'displayId': hit['_source'].get('displayId'),
-        'name': hit['_source'].get('name'),
-        'description': hit['_source'].get('description'),
-        'type': hit['_source'].get('type'),
-        'graph': hit['_source'].get('graph'),
-        'score': hit['_score'],
-    } for hit in hits]
+        'uri': e['hit']['_source']['subject'],
+        'displayId': e['hit']['_source'].get('displayId'),
+        'name': e['hit']['_source'].get('name'),
+        'description': e['hit']['_source'].get('description'),
+        'type': e['hit']['_source'].get('type'),
+        'graph': e['hit']['_source'].get('graph'),
+        'rank': rank,
+        'matched_by': e['matched_by'],
+    } for rank, e in enumerate(interleave(rankings, k), start=1)]
 
 
 def run_sparql(sparql: str) -> List[Dict]:
@@ -207,7 +276,7 @@ def retrieve(question: str, graphs: Optional[List[str]] = None, k: int = 5, hops
         if uri in nodes:
             nodes[uri].update({key: value for key, value in extra.items() if not nodes[uri].get(key)})
     for seed in seeds:
-        nodes[seed['uri']]['score'] = seed['score']
+        nodes[seed['uri']].update(rank=seed['rank'], matched_by=seed['matched_by'])
 
     return {
         'question': question,

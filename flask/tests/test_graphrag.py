@@ -9,7 +9,7 @@ PROMOTER = 'http://identifiers.org/so/SO:0000167'
 
 def seed(uri=SEED):
     return {'uri': uri, 'displayId': uri.split('/')[-2], 'name': 'GFP', 'description': 'green',
-            'type': graphrag.SBOL2 + 'ComponentDefinition', 'graph': 'https://synbiohub.org/public', 'score': 1.0}
+            'type': graphrag.SBOL2 + 'ComponentDefinition', 'graph': 'https://synbiohub.org/public', 'rank': 1, 'matched_by': ['text']}
 
 
 class GraphClauseTests(unittest.TestCase):
@@ -63,15 +63,36 @@ class RetrieveTests(unittest.TestCase):
         self.assertEqual([n['uri'] for n in capped['nodes']], [SEED])
 
 
+def hit(uri):
+    return {'_id': uri, '_source': {'subject': uri, 'displayId': uri}}
+
+
 class FindSeedsTests(unittest.TestCase):
     def test_seed_search_is_graph_filtered_and_boosts_exact_ids(self):
         es = mock.Mock()
         es.search.return_value = {'hits': {'hits': []}}
-        with mock.patch.object(graphrag.elasticsearch_manager, 'get_es', return_value=es):
+        with mock.patch.object(graphrag.elasticsearch_manager, 'get_es', return_value=es), \
+                mock.patch('graphrag.vector_search_enabled', return_value=False):
             graphrag.find_seeds('BBa_B0015', [], 5)
+        self.assertEqual(es.search.call_count, 1)
         inner = es.search.call_args.kwargs['body']['query']['function_score']['query']['bool']
-        self.assertIn({'bool': {'must_not': {'wildcard': {'graph': '*/user/*'}}}}, inner['filter'])
+        self.assertIn({'bool': {'must_not': {'wildcard': {'graph': '*/user/*'}}}}, inner['filter'][0]['bool']['filter'])
         self.assertEqual(inner['should'][0]['match']['displayId']['query'], 'BBa_B0015')
+
+    def test_rankings_take_turns_and_keep_the_text_top_hit_first(self):
+        rankings = {'text': [hit('gfp'), hit('gfp_device'), hit('yfp')],
+                    'vector': [hit('gfp_device'), hit('terminator'), hit('gfp')]}
+        seeds = graphrag.interleave(rankings, 4)
+        self.assertEqual([s['hit']['_id'] for s in seeds], ['gfp', 'gfp_device', 'terminator', 'yfp'])
+        self.assertEqual(seeds[0]['matched_by'], ['text', 'vector'])
+        self.assertEqual(seeds[2]['matched_by'], ['vector'])
+
+    def test_vector_failure_falls_back_to_keywords(self):
+        with mock.patch('graphrag.text_hits', return_value=[hit('gfp')]), \
+                mock.patch('graphrag.vector_search_enabled', return_value=True), \
+                mock.patch('graphrag.vector_hits', side_effect=RuntimeError('no embedding field')):
+            seeds = graphrag.find_seeds('gfp', [], 3)
+        self.assertEqual([(s['uri'], s['matched_by']) for s in seeds], [('gfp', ['text'])])
 
 
 if __name__ == '__main__':
