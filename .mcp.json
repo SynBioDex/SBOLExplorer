@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sbolexplorer": {
+      "command": "uv",
+      "args": ["run", "-q", "--script", "mcp/sbolexplorer_mcp.py"],
+      "env": {
+        "EXPLORER_URL": "http://localhost:13162",
+        "SPARQL_ENDPOINT": "http://localhost:8890/sparql",
+        "PUBLIC_GRAPH": "https://synbiohub.org/public"
+      }
+    }
+  }
+}
