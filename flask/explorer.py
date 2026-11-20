@@ -12,6 +12,7 @@ import pagerank
 import index
 import facets
 import graphrag
+import ask
 import search
 import vector_search
 import query
@@ -386,6 +387,33 @@ def graphrag_retrieve():
         ))
     except Exception as e:
         log.error(f'Error during graphrag retrieval: {e}')
+        raise
+
+@app.route('/ask', methods=['POST'])
+def ask_question():
+    """
+    Answer to a question from Claude using /graphrag and read-only SPARQL as
+    tools, with every tool call it made; see ask.py.
+
+    POST /ask  {"question": "...", "graph": ["<public>", "<user graph>"]}
+    Without graphs only public data is used. 503 unless "ask" is on in the
+    config and ANTHROPIC_API_KEY is set.
+    """
+    body = request.get_json(silent=True) or {}
+    question = str(body.get('question', '')).strip()
+    if not question:
+        abort(400, 'question is required')
+    graphs = body.get('graph', [])
+    if isinstance(graphs, str):
+        graphs = [graphs]
+    if not isinstance(graphs, list) or not all(isinstance(g, str) for g in graphs):
+        abort(400, 'graph must be a list of graph URIs')
+    if not ask.enabled():
+        abort(503, 'Ask is turned off (set "ask": true in the config and ANTHROPIC_API_KEY).')
+    try:
+        return jsonify(ask.ask(question, graphs=graphs, uri2rank=data_manager.get_uri2rank()))
+    except Exception as e:
+        log.error(f'Error during ask: {e}')
         raise
 
 # Initialize Explorer after all startup dependencies, including update_index,
