@@ -105,6 +105,18 @@ def clamp(value, default: int, low: int, high: int) -> int:
         return default
 
 
+MATCH_LABELS = {'text': 'keywords', 'vector': 'meaning'}
+
+
+def seed_sources(result: Dict) -> str:
+    """One line naming each seed and the search that found it, as the MCP server does."""
+    seeds = [n for n in result['nodes'] if n.get('seed')]
+    seeds.sort(key=lambda n: n.get('rank', 0))
+    return 'Seeds (found by): ' + ', '.join(
+        f"{n.get('displayId')} [{' + '.join(MATCH_LABELS.get(m, m) for m in n.get('matched_by', []))}]"
+        for n in seeds)
+
+
 def run_tool(name: str, tool_input: Dict, graphs: List[str], uri2rank: Optional[Dict]) -> str:
     """Runs one tool call; raises ValueError for a call the model can correct."""
     if name == 'graphrag_retrieve':
@@ -115,7 +127,9 @@ def run_tool(name: str, tool_input: Dict, graphs: List[str], uri2rank: Optional[
                                    k=clamp(tool_input.get('k'), 5, 1, 20),
                                    hops=clamp(tool_input.get('hops'), 1, 1, 2),
                                    uri2rank=uri2rank)
-        return result['context'] or 'No matching parts found.'
+        if not result['context']:
+            return 'No matching parts found.'
+        return f"{seed_sources(result)}\n\n{result['context']}"
     if name == 'sparql_query':
         endpoint = config_manager.load_config()['sparql_endpoint']
         return readonly_sparql.format_results(

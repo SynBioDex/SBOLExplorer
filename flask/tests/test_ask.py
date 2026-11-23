@@ -45,7 +45,11 @@ class AskTests(unittest.TestCase):
         client = FakeClient(
             reply('tool_use', text('Looking it up.'), tool_use('t1', 'graphrag_retrieve', {'question': 'terminator'})),
             reply('end_turn', text('[BBa_B0015](https://synbiohub.org/public/igem/BBa_B0015/1) is a terminator.')))
-        retrieved = {'context': '# Matched parts\nBBa_B0015 ...'}
+        retrieved = {'context': '# Matched parts\nBBa_B0015 ...',
+                     'nodes': [{'displayId': 'BBa_B0012', 'seed': True, 'rank': 2, 'matched_by': ['vector']},
+                               {'displayId': 'BBa_B0010', 'seed': False},
+                               {'displayId': 'BBa_B0015', 'seed': True, 'rank': 1, 'matched_by': ['text', 'vector']}]}
+        context = 'Seeds (found by): BBa_B0015 [keywords + meaning], BBa_B0012 [meaning]\n\n# Matched parts\nBBa_B0015 ...'
         with mock.patch('ask.graphrag.retrieve', return_value=retrieved) as retrieve:
             result = ask.ask('What is BBa_B0015?', client=client, clock=iter(range(100)).__next__)
 
@@ -53,11 +57,10 @@ class AskTests(unittest.TestCase):
         self.assertEqual(result['answer'], '[BBa_B0015](https://synbiohub.org/public/igem/BBa_B0015/1) is a terminator.')
         self.assertEqual(result['stop_reason'], 'end_turn')
         self.assertEqual(result['steps'], [{'tool': 'graphrag_retrieve', 'input': {'question': 'terminator'},
-                                            'output': '# Matched parts\nBBa_B0015 ...', 'seconds': 1}])
+                                            'output': context, 'seconds': 1}])
         self.assertEqual(result['usage']['input_tokens'], 20)
         tool_result = client.requests[1]['messages'][2]['content'][0]
-        self.assertEqual(tool_result, {'type': 'tool_result', 'tool_use_id': 't1',
-                                       'content': '# Matched parts\nBBa_B0015 ...'})
+        self.assertEqual(tool_result, {'type': 'tool_result', 'tool_use_id': 't1', 'content': context})
 
     def test_sparql_runs_over_the_callers_graphs_or_the_public_graph(self):
         for graphs, expected in [([], ['https://synbiohub.org/public']),
@@ -87,7 +90,7 @@ class AskTests(unittest.TestCase):
         calls = [reply('tool_use', tool_use(f't{i}', 'graphrag_retrieve', {'question': 'x'}))
                  for i in range(ask.MAX_TOOL_ROUNDS + 1)]
         client = FakeClient(*calls)
-        with mock.patch('ask.graphrag.retrieve', return_value={'context': 'c'}) as retrieve:
+        with mock.patch('ask.graphrag.retrieve', return_value={'context': 'c', 'nodes': []}) as retrieve:
             result = ask.ask('q', client=client)
         self.assertEqual(result['stop_reason'], 'max_tool_rounds')
         self.assertEqual(retrieve.call_count, ask.MAX_TOOL_ROUNDS)
